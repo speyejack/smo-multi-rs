@@ -8,14 +8,14 @@ use std::{convert::Infallible, str::FromStr};
 use clap::{Parser, Subcommand, ValueEnum};
 use tokio::sync::mpsc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Command {
     Packet(Packet),
     Cli(CliCommand),
     Server(ServerCommand),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum ServerCommand {
     NewPlayer {
         guid: Guid,

@@ -4,6 +4,7 @@ mod coordinator;
 mod guid;
 mod net;
 mod server;
+mod settings;
 mod types;
 
 use anyhow::Result;
@@ -12,17 +13,29 @@ use client::ClientMap;
 use cmds::{Cli, Command};
 use coordinator::Coordinator;
 use server::Server;
-use std::{collections::HashMap, io::Write};
-use tokio::{join, sync::mpsc};
+use settings::SyncSettings;
+use std::{
+    collections::{HashMap, HashSet},
+    io::Write,
+    sync::Arc,
+};
+use tokio::{
+    join,
+    sync::{mpsc, RwLock},
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let (to_coord, from_clients) = mpsc::channel(100);
+    let settings = SyncSettings::default();
     let server = Server {
+        settings: settings.clone(),
         to_coord: to_coord.clone(),
     };
     let coordinator = Coordinator {
+        shine_bag: Arc::new(RwLock::new(HashSet::default())),
         from_clients,
+        settings,
         clients: ClientMap::new(),
         to_clients: HashMap::new(),
     };

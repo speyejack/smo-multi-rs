@@ -453,6 +453,7 @@ dependencies = [
  "bytes",
  "clap",
  "dashmap",
+ "log",
  "nalgebra",
  "serde",
  "thiserror",

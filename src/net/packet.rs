@@ -1,15 +1,34 @@
-use super::encoding::{Decodable, Encodable, EncodingError};
+use std::mem::Discriminant;
+
+use super::encoding::{Decodable, Encodable};
 use crate::{
     guid::Guid,
-    types::{Quaternion, Vector3},
+    types::{Costume, EncodingError, Quaternion, Vector3},
 };
 use bytes::{Buf, BufMut};
+const COSTUME_NAME_SIZE: usize = 0x20;
+const STAGE_NAME_SIZE: usize = 0x30;
+const STAGE_ID_SIZE: usize = 0x10;
+const CLIENT_NAME_SIZE: usize = COSTUME_NAME_SIZE;
 
 #[derive(Debug, Clone)]
 pub struct Packet {
     pub id: Guid,
     pub data_size: u16,
     pub data: PacketData,
+}
+
+impl Packet {
+    pub fn new(id: Guid, data: PacketData) -> Packet {
+        Packet {
+            id,
+            data_size: data
+                .get_size()
+                .try_into()
+                .expect("Extremely large data size"),
+            data,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -51,10 +70,7 @@ pub enum PacketData {
         client_name: String,
     },
     Disconnect,
-    Costume {
-        body_name: String,
-        cap_name: String,
-    },
+    Costume(Costume),
     Shine {
         shine_id: i32,
     },
@@ -71,6 +87,23 @@ pub enum PacketData {
 }
 
 impl PacketData {
+    fn get_size(&self) -> usize {
+        match self {
+            Self::Unhandled { data, .. } => data.len(),
+            Self::Init { .. } => 2,
+            Self::Player { .. } => 0x38,
+            Self::Cap { .. } => 0x50,
+            Self::Game { .. } => 0x42,
+            Self::Tag { .. } => 6,
+            Self::Connect { .. } => 6 + CLIENT_NAME_SIZE,
+            Self::Disconnect { .. } => 0,
+            Self::Costume { .. } => COSTUME_NAME_SIZE * 2,
+            Self::Shine { .. } => 4,
+            Self::Capture { .. } => COSTUME_NAME_SIZE,
+            Self::ChangeStage { .. } => STAGE_ID_SIZE + STAGE_NAME_SIZE + 2,
+            Self::Command { .. } => 0,
+        }
+    }
     fn get_type_id(&self) -> u16 {
         match self {
             Self::Unhandled { tag, .. } => *tag,
@@ -146,12 +179,13 @@ where
                 pos: Vector3::decode(buf)?,
                 rot: Quaternion::decode(buf)?,
                 cap_out: buf.get_u8() != 0,
-                cap_anim: std::str::from_utf8(&buf.copy_to_bytes(16)[..])?.to_string(),
+                cap_anim: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
+                    .to_string(),
             },
             4 => PacketData::Game {
                 is_2d: buf.get_u8() != 0,
                 scenario_num: buf.get_u8(),
-                stage: std::str::from_utf8(&buf.copy_to_bytes(16)[..])?.to_string(),
+                stage: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?.to_string(),
             },
             5 => PacketData::Tag {
                 update_type: if buf.get_u8() == 1 {
@@ -170,22 +204,25 @@ where
                     ConnectionType::Reconnecting
                 },
                 max_player: buf.get_u16(),
-                client_name: std::str::from_utf8(&buf.copy_to_bytes(16)[..])?.to_string(),
+                client_name: std::str::from_utf8(&buf.copy_to_bytes(CLIENT_NAME_SIZE)[..])?
+                    .to_string(),
             },
             7 => PacketData::Disconnect,
-            8 => PacketData::Costume {
-                body_name: std::str::from_utf8(&buf.copy_to_bytes(16)[..])?.to_string(),
-                cap_name: std::str::from_utf8(&buf.copy_to_bytes(16)[..])?.to_string(),
-            },
+            8 => PacketData::Costume(Costume {
+                body_name: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
+                    .to_string(),
+                cap_name: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
+                    .to_string(),
+            }),
             9 => PacketData::Shine {
                 shine_id: buf.get_i32(),
             },
             10 => PacketData::Capture {
-                model: std::str::from_utf8(&buf.copy_to_bytes(16)[..])?.to_string(),
+                model: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?.to_string(),
             },
             11 => PacketData::ChangeStage {
-                stage: std::str::from_utf8(&buf.copy_to_bytes(16)[..])?.to_string(),
-                id: std::str::from_utf8(&buf.copy_to_bytes(16)[..])?.to_string(),
+                stage: std::str::from_utf8(&buf.copy_to_bytes(STAGE_NAME_SIZE)[..])?.to_string(),
+                id: std::str::from_utf8(&buf.copy_to_bytes(STAGE_ID_SIZE)[..])?.to_string(),
                 scenerio: buf.get_i8(),
                 sub_scenario: buf.get_u8(),
             },
@@ -237,7 +274,7 @@ where
                 pos.encode(buf)?;
                 rot.encode(buf)?;
                 buf.put_u8((*cap_out).into());
-                buf.put_slice(&cap_anim.as_bytes()[..16])
+                buf.put_slice(&cap_anim.as_bytes()[..COSTUME_NAME_SIZE])
             }
             PacketData::Game {
                 is_2d,
@@ -246,7 +283,7 @@ where
             } => {
                 buf.put_u8((*is_2d).into());
                 buf.put_u8(*scenario_num);
-                buf.put_slice(&stage.as_bytes()[..16])
+                buf.put_slice(&stage.as_bytes()[..COSTUME_NAME_SIZE])
             }
             PacketData::Tag {
                 update_type,
@@ -274,26 +311,26 @@ where
                 };
                 buf.put_u8(tag);
                 buf.put_u16(*max_player);
-                buf.put_slice(&client_name.as_bytes()[..16])
+                buf.put_slice(&client_name.as_bytes()[..COSTUME_NAME_SIZE])
             }
             PacketData::Disconnect => {}
-            PacketData::Costume {
+            PacketData::Costume(Costume {
                 body_name,
                 cap_name,
-            } => {
-                buf.put_slice(&body_name.as_bytes()[..16]);
-                buf.put_slice(&cap_name.as_bytes()[..16]);
+            }) => {
+                buf.put_slice(&body_name.as_bytes()[..COSTUME_NAME_SIZE]);
+                buf.put_slice(&cap_name.as_bytes()[..COSTUME_NAME_SIZE]);
             }
             PacketData::Shine { shine_id } => buf.put_i32(*shine_id),
-            PacketData::Capture { model } => buf.put_slice(&model.as_bytes()[..16]),
+            PacketData::Capture { model } => buf.put_slice(&model.as_bytes()[..COSTUME_NAME_SIZE]),
             PacketData::ChangeStage {
                 stage,
                 id,
                 scenerio,
                 sub_scenario,
             } => {
-                buf.put_slice(&stage.as_bytes()[..16]);
-                buf.put_slice(&id.as_bytes()[..16]);
+                buf.put_slice(&stage.as_bytes()[..COSTUME_NAME_SIZE]);
+                buf.put_slice(&id.as_bytes()[..COSTUME_NAME_SIZE]);
                 buf.put_i8(*scenerio);
                 buf.put_u8(*sub_scenario);
             }

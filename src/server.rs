@@ -1,19 +1,14 @@
 use anyhow::Result;
-use bytes::BytesMut;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::mpsc,
 };
 
-use crate::{
-    client::{CliRecv, CliSend, Client, SyncClient},
-    cmds::{Command, ServerCommand},
-    guid::Guid,
-    net::Packet,
-};
+use crate::{cmds::Command, settings::SyncSettings};
 
 pub struct Server {
     pub to_coord: mpsc::Sender<Command>,
+    pub settings: SyncSettings,
 }
 
 impl Server {
@@ -23,8 +18,10 @@ impl Server {
             let (socket, _) = listener.accept().await?;
 
             let to_coord = self.to_coord.clone();
+            let settings = self.settings.clone();
+
             tokio::spawn(async move {
-                Self::handle_new_client(socket, to_coord).await;
+                Self::handle_new_client(socket, to_coord, settings).await;
 
                 // let mut buffer = [0; 1024];
                 // println!("Connection started");
@@ -38,50 +35,24 @@ impl Server {
         }
     }
 
-    async fn handle_new_client(socket: TcpStream, to_coord: mpsc::Sender<Command>) -> Result<()> {
-        let (recv, send) = socket.into_split();
-        let (to_cli, from_serv) = mpsc::channel(10);
-        let cli = Client::default();
-        let guid = Guid::default();
+    async fn handle_new_client(
+        socket: TcpStream,
+        to_coord: mpsc::Sender<Command>,
+        settings: SyncSettings,
+    ) -> Result<()> {
+        todo!()
+        // let cli = Client::initialize_client(socket, to_coord, settings)?;
 
-        let mut recv = CliRecv {
-            guid: guid.clone(),
-            socket: recv,
-            data: cli.data.clone(),
-            to_coord: to_coord.clone(),
-            buff: BytesMut::new(),
-        };
+        // to_coord
+        //     .send(Command::Server(ServerCommand::NewPlayer {
+        //         guid,
+        //         cli,
+        //         comm: to_cli,
+        //     }))
+        //     .await?;
 
-        let packet = recv.read_packet().await?;
-        let result: Result<(), _> = match packet.data {
-            crate::net::PacketData::Connect {
-                c_type,
-                max_player,
-                client_name,
-            } => todo!(),
-            _ => Err(anyhow::anyhow!("First packet was not connect.")),
-        };
+        // tokio::spawn(async move { cli.handle_events() });
 
-        let guid = packet.id;
-        recv.guid = guid.clone();
-
-        let send = CliSend {
-            guid: guid.clone(),
-            from_server: from_serv,
-            socket: send,
-        };
-
-        tokio::spawn(async move { recv.handle_packets().await });
-        tokio::spawn(async move { send.handle_packets().await });
-
-        to_coord
-            .send(Command::Server(ServerCommand::NewPlayer {
-                guid,
-                cli,
-                comm: to_cli,
-            }))
-            .await?;
-
-        Ok(())
+        // Ok(())
     }
 }
