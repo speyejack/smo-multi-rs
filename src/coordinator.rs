@@ -7,7 +7,7 @@ use crate::{
     types::SMOError,
 };
 use anyhow::Result;
-use dashmap::Map;
+
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -30,15 +30,20 @@ impl Coordinator {
             let cmd = self.from_clients.recv().await;
             if let Some(c) = cmd {
                 let result = self.handle_command(c).await;
-
-                if let Err(e) = result {
-                    log::warn!("Coordinator error: {e}")
+                match result {
+                    Ok(false) => break,
+                    Ok(true) => {}
+                    Err(e) => {
+                        log::warn!("Coordinator error: {e}")
+                    }
                 }
             }
         }
+
+        self.shutdown().await;
     }
 
-    async fn handle_command(&mut self, cmd: Command) -> Result<()> {
+    async fn handle_command(&mut self, cmd: Command) -> Result<bool> {
         match cmd {
             Command::Server(ServerCommand::NewPlayer { .. }) => {
                 self.add_client(cmd).await?;
@@ -63,10 +68,10 @@ impl Coordinator {
                         )
                         .await?;
                         // self.client_sync_shines(&client).await;
-                        return Ok(());
+                        return Ok(true);
                     }
                     PacketData::Game {
-                        is_2d,
+                        is_2d: _,
                         scenario_num,
                         stage,
                     } => {
@@ -113,7 +118,7 @@ impl Coordinator {
         self.to_clients.get(id).ok_or(SMOError::InvalidID(*id))
     }
 
-    async fn add_client(&mut self, cmd: Command) -> Result<()> {
+    async fn add_client(&mut self, _cmd: Command) -> Result<()> {
         todo!()
     }
 
@@ -126,6 +131,13 @@ impl Coordinator {
             cli.send(Command::Packet(p.clone())).await?;
         }
         Ok(())
+    }
+
+    async fn shutdown(self) {
+        for cli in self.to_clients.values() {
+            // Eat all errors
+            let _ = cli.send(Command::Server(ServerCommand::Shutdown)).await;
+        }
     }
 }
 

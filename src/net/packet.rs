@@ -1,4 +1,4 @@
-use std::{io::Cursor, mem::Discriminant};
+use std::{io::Cursor};
 
 use super::encoding::{Decodable, Encodable};
 use crate::{
@@ -6,7 +6,7 @@ use crate::{
     types::{Costume, EncodingError, Quaternion, Vector3},
 };
 use bytes::{Buf, BufMut};
-use tokio::{io::BufWriter, net::TcpStream};
+
 
 type Result<T> = std::result::Result<T, EncodingError>;
 
@@ -167,7 +167,7 @@ impl<R> Decodable<R> for Packet
 where
     R: Buf,
 {
-    fn decode(mut buf: &mut R) -> std::result::Result<Self, EncodingError> {
+    fn decode(buf: &mut R) -> std::result::Result<Self, EncodingError> {
         if buf.remaining() < (16 + 2 + 2) {
             log::debug!("Header size failed");
             return Err(EncodingError::NotEnoughData);

@@ -45,7 +45,7 @@ pub enum EncodingError {
 }
 
 impl SerError for EncodingError {
-    fn custom<T>(msg: T) -> Self
+    fn custom<T>(_msg: T) -> Self
     where
         T: std::fmt::Display,
     {
@@ -54,7 +54,7 @@ impl SerError for EncodingError {
 }
 
 impl DeError for EncodingError {
-    fn custom<T>(msg: T) -> Self
+    fn custom<T>(_msg: T) -> Self
     where
         T: std::fmt::Display,
     {

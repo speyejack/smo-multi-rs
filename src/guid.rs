@@ -1,19 +1,13 @@
-use std::{convert::Infallible, fmt::Display, str::FromStr};
+use std::{fmt::Display, str::FromStr};
 
 use hex::FromHex;
 use serde::{Deserialize, Serialize};
 
 use crate::types::EncodingError;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Eq, Hash, Copy)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Eq, Hash, Copy, Default)]
 pub struct Guid {
     pub id: [u8; 16],
-}
-
-impl Default for Guid {
-    fn default() -> Self {
-        Self { id: [0; 16] }
-    }
 }
 
 impl FromStr for Guid {

@@ -26,7 +26,7 @@ impl Server {
                 let result = Self::handle_new_client(socket, to_coord, settings).await;
 
                 if let Err(e) = result {
-                    log::warn!("Client failed to begin")
+                    log::warn!("Client failed to begin: {}", e)
                 }
                 // let mut buffer = [0; 1024];
                 // println!("Connection started");
@@ -45,7 +45,7 @@ impl Server {
         to_coord: mpsc::Sender<Command>,
         settings: SyncSettings,
     ) -> Result<()> {
-        let cli = Client::initialize_client(socket, to_coord, settings).await?;
+        let _cli = Client::initialize_client(socket, to_coord, settings).await?;
         todo!()
 
         // to_coord

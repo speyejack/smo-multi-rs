@@ -141,12 +141,12 @@ impl Client {
     }
 
     pub async fn recv_packet(&mut self) -> Result<Packet> {
-        Ok(self.conn.read_packet().await?)
+        self.conn.read_packet().await
     }
 
     fn parse_packet(&mut self) -> Result<Packet> {
         match self.conn.parse_packet() {
-            Err(e) => Err(e.into()),
+            Err(e) => Err(e),
             Ok(Some(t)) => Ok(t),
             Ok(None) => Err(EncodingError::NotEnoughData.into()),
         }
@@ -178,7 +178,7 @@ impl Client {
         settings: SyncSettings,
     ) -> Result<(Self, mpsc::Sender<Command>)> {
         log::debug!("Starting client initializaiton");
-        let (to_cli, from_server) = mpsc::channel(10);
+        let (_to_cli, from_server) = mpsc::channel(10);
 
         let l_set = settings.read().await;
         let max_players = l_set.max_players;
@@ -205,12 +205,12 @@ impl Client {
         // TODO Verified max connected players
         match connect.data {
             PacketData::Connect {
-                c_type,
-                max_player,
-                client_name,
+                c_type: _,
+                max_player: _,
+                client_name: _,
             } => {
                 log::debug!("Created client data");
-                let client = Client {
+                let _client = Client {
                     data,
                     guid: Guid::default(),
                     alive: true,
@@ -222,7 +222,7 @@ impl Client {
                 // Then figure out if any stale clients remaining and remove them.
                 todo!()
             }
-            _ => return Err(SMOError::ClientInit),
+            _ => Err(SMOError::ClientInit),
         }
 
         // TODO Have coordinator verify that this user can be online.
