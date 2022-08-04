@@ -1,15 +1,15 @@
 use crate::cmds::Command;
 use crate::guid::Guid;
+use crate::net::connection::Connection;
+use crate::net::Packet;
 use crate::net::PacketData;
-use crate::net::{encoding::Decodable, Packet};
 use crate::settings::SyncSettings;
-use crate::types::Costume;
-use anyhow::Result;
-use bytes::{Buf, BytesMut};
+use crate::types::{Costume, SMOError};
+use crate::types::{EncodingError, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::{mpsc, RwLock};
@@ -22,10 +22,9 @@ pub struct Client {
     pub data: SyncClient,
     pub guid: Guid,
     pub alive: bool,
-    pub socket: TcpStream,
+    pub conn: Connection,
     pub to_coord: mpsc::Sender<Command>,
     pub from_server: mpsc::Receiver<Command>,
-    pub buff: bytes::BytesMut,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -62,14 +61,14 @@ impl Client {
             }
         }
 
-        self.disconnect().await;
+        self.disconnect().await?;
         Ok(())
     }
 
     async fn read_event(&mut self) -> Result<ClientEvent> {
         let event = select! {
-            amount = self.socket.read(&mut self.buff[..]) => {
-                ClientEvent::Packet(self.parse_packet(amount?)?)
+            packet = self.conn.read_packet() => {
+                ClientEvent::Packet(packet?)
             },
             command = self.from_server.recv() => ClientEvent::Command(command.unwrap()),
         };
@@ -77,7 +76,7 @@ impl Client {
     }
 
     pub async fn disconnect(mut self) -> Result<()> {
-        self.socket.shutdown();
+        self.conn.socket.shutdown().await?;
         Ok(())
     }
 
@@ -142,17 +141,15 @@ impl Client {
     }
 
     pub async fn recv_packet(&mut self) -> Result<Packet> {
-        let read_amount = self.socket.read(&mut self.buff[..]).await?;
-        self.parse_packet(read_amount)
+        Ok(self.conn.read_packet().await?)
     }
 
-    fn parse_packet(&mut self, read_amount: usize) -> Result<Packet> {
-        if read_amount == 0 {
-            self.alive = false;
+    fn parse_packet(&mut self) -> Result<Packet> {
+        match self.conn.parse_packet() {
+            Err(e) => Err(e.into()),
+            Ok(Some(t)) => Ok(t),
+            Ok(None) => Err(EncodingError::NotEnoughData.into()),
         }
-        let result: Packet = Packet::decode(&mut self.buff.split())?;
-        self.buff.advance(read_amount);
-        Ok(result)
     }
 
     async fn handle_command(&mut self, command: Command) -> Result<()> {
@@ -172,61 +169,66 @@ impl Client {
     }
 
     pub async fn send_packet(&mut self, packet: &Packet) -> Result<()> {
-        let mut buff = BytesMut::with_capacity(300);
-        // let mut buffer: [u8; 100] = [0; 100];
-        // let mut cursor = Cursor::new(&mut buffer[..]);
-        // let size = bincode::serialized_size(&packet).unwrap() as usize;
-        // bincode::serialize_into(&mut cursor, &packet)?;
-        // let amount = self.socket.write(&buffer[..size]).await?;
-        // assert!(amount == size);
-        Ok(())
+        self.conn.write_packet(packet).await
     }
 
-    async fn initialize_client(
+    pub async fn initialize_client(
         socket: TcpStream,
         to_coord: mpsc::Sender<Command>,
         settings: SyncSettings,
     ) -> Result<(Self, mpsc::Sender<Command>)> {
+        log::debug!("Starting client initializaiton");
         let (to_cli, from_server) = mpsc::channel(10);
 
         let l_set = settings.read().await;
         let max_players = l_set.max_players;
         drop(l_set);
 
+        log::debug!("Verified max players");
         let data = ClientData {
             settings,
             ..ClientData::default()
         };
         let data = Arc::new(RwLock::new(data));
 
-        let mut client = Client {
-            data,
-            guid: Guid::default(),
-            alive: true,
-            socket,
-            to_coord,
-            from_server,
-            buff: BytesMut::with_capacity(300),
-        };
+        let mut conn = Connection::new(socket);
 
-        client
-            .send_packet(&Packet::new(client.guid, PacketData::Init { max_players }))
-            .await?;
-        let connect = client.recv_packet().await?;
+        log::debug!("Created client");
+        conn.write_packet(&Packet::new(
+            Guid::default(),
+            PacketData::Init { max_players },
+        ))
+        .await?;
+        log::debug!("Sent init packet");
+        let connect = conn.read_packet().await?;
+        log::debug!("Received connect packet");
         // TODO Verified max connected players
-        client.guid = connect.id;
         match connect.data {
             PacketData::Connect {
                 c_type,
                 max_player,
                 client_name,
             } => {
+                log::debug!("Created client data");
+                let client = Client {
+                    data,
+                    guid: Guid::default(),
+                    alive: true,
+                    to_coord,
+                    from_server,
+                    conn,
+                };
                 // TODO Check if connection is new or reconnecting
                 // Then figure out if any stale clients remaining and remove them.
+                todo!()
             }
-            _ => return Err(anyhow::anyhow!("Failed to initialize client")),
+            _ => return Err(SMOError::ClientInit),
         }
 
-        todo!()
+        // TODO Have coordinator verify that this user can be online.
+        // Check max players and whitelist/banlist
+
+        // Have coordinator call setup_client
+        // TODO Send all of the last game packets to the client
     }
 }

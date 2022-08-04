@@ -1,8 +1,4 @@
-use crate::{
-    client::{Client, SyncClient},
-    guid::Guid,
-    net::Packet,
-};
+use crate::{client::Client, guid::Guid, net::Packet};
 use std::{convert::Infallible, str::FromStr};
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -22,6 +18,7 @@ pub enum ServerCommand {
         cli: Client,
         comm: mpsc::Sender<Packet>,
     },
+    Shutdown,
 }
 
 #[derive(Parser, Debug)]

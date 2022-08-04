@@ -1,4 +1,4 @@
-use std::mem::Discriminant;
+use std::{io::Cursor, mem::Discriminant};
 
 use super::encoding::{Decodable, Encodable};
 use crate::{
@@ -6,6 +6,10 @@ use crate::{
     types::{Costume, EncodingError, Quaternion, Vector3},
 };
 use bytes::{Buf, BufMut};
+use tokio::{io::BufWriter, net::TcpStream};
+
+type Result<T> = std::result::Result<T, EncodingError>;
+
 const COSTUME_NAME_SIZE: usize = 0x20;
 const STAGE_NAME_SIZE: usize = 0x30;
 const STAGE_ID_SIZE: usize = 0x10;
@@ -28,6 +32,26 @@ impl Packet {
                 .expect("Extremely large data size"),
             data,
         }
+    }
+
+    pub fn check(buf: &mut Cursor<&[u8]>) -> Result<u64> {
+        log::debug!("Attempting check");
+        let header_size = 16 + 2;
+        let start_pos = buf.position();
+        if buf.remaining() < header_size + 2 {
+            log::debug!("Not enough data for header");
+            return Err(EncodingError::NotEnoughData);
+        }
+
+        buf.advance(header_size);
+        let size = buf.get_u16().into();
+        if buf.remaining() < size {
+            log::debug!("Not enough data for data");
+            return Err(EncodingError::NotEnoughData);
+        }
+        log::debug!("Successful parse!");
+        buf.advance(size);
+        Ok(buf.position() - start_pos)
     }
 }
 
@@ -145,6 +169,7 @@ where
 {
     fn decode(mut buf: &mut R) -> std::result::Result<Self, EncodingError> {
         if buf.remaining() < (16 + 2 + 2) {
+            log::debug!("Header size failed");
             return Err(EncodingError::NotEnoughData);
         }
 
@@ -154,6 +179,7 @@ where
         let p_size = buf.get_u16();
 
         if buf.remaining() < p_size.into() {
+            log::debug!("data size failed");
             return Err(EncodingError::NotEnoughData);
         }
 
@@ -233,7 +259,11 @@ where
             },
         };
 
-        todo!()
+        Ok(Packet {
+            id: id.into(),
+            data_size: p_size,
+            data,
+        })
     }
 }
 
@@ -241,7 +271,7 @@ impl<W> Encodable<W> for Packet
 where
     W: BufMut,
 {
-    fn encode(&self, buf: &mut W) -> Result<(), EncodingError> {
+    fn encode(&self, buf: &mut W) -> Result<()> {
         buf.put_slice(&self.id.id[..]);
         buf.put_u16(self.data.get_type_id());
         buf.put_u16(self.data_size);

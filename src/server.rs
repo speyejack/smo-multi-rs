@@ -1,10 +1,11 @@
-use anyhow::Result;
+use crate::types::Result;
+use std::net::SocketAddr;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::mpsc,
 };
 
-use crate::{cmds::Command, settings::SyncSettings};
+use crate::{client::Client, cmds::Command, settings::SyncSettings};
 
 pub struct Server {
     pub to_coord: mpsc::Sender<Command>,
@@ -12,17 +13,21 @@ pub struct Server {
 }
 
 impl Server {
-    pub async fn listen_for_clients(self) -> Result<()> {
-        let listener = TcpListener::bind("127.0.0.1:8080").await?;
+    pub async fn listen_for_clients(self, addr: SocketAddr) -> Result<()> {
+        let listener = TcpListener::bind(addr).await?;
         loop {
             let (socket, _) = listener.accept().await?;
 
             let to_coord = self.to_coord.clone();
             let settings = self.settings.clone();
+            log::info!("New client attempting to connect");
 
             tokio::spawn(async move {
-                Self::handle_new_client(socket, to_coord, settings).await;
+                let result = Self::handle_new_client(socket, to_coord, settings).await;
 
+                if let Err(e) = result {
+                    log::warn!("Client failed to begin")
+                }
                 // let mut buffer = [0; 1024];
                 // println!("Connection started");
                 // socket.read(&mut buffer).await;
@@ -40,8 +45,8 @@ impl Server {
         to_coord: mpsc::Sender<Command>,
         settings: SyncSettings,
     ) -> Result<()> {
+        let cli = Client::initialize_client(socket, to_coord, settings).await?;
         todo!()
-        // let cli = Client::initialize_client(socket, to_coord, settings)?;
 
         // to_coord
         //     .send(Command::Server(ServerCommand::NewPlayer {
