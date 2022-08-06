@@ -1,4 +1,8 @@
-use crate::{client::Client, guid::Guid, net::Packet};
+use crate::{
+    client::Client,
+    guid::Guid,
+    net::{ConnectionType, Packet},
+};
 use std::{convert::Infallible, str::FromStr};
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -14,9 +18,12 @@ pub enum Command {
 #[derive(Debug)]
 pub enum ServerCommand {
     NewPlayer {
-        guid: Guid,
         cli: Client,
-        comm: mpsc::Sender<Packet>,
+        connect_packet: Box<Packet>,
+        comm: mpsc::Sender<Command>,
+    },
+    DisconnectPlayer {
+        guid: Guid,
     },
     Shutdown,
 }

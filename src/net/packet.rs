@@ -1,4 +1,4 @@
-use std::{io::Cursor};
+use std::io::Cursor;
 
 use super::encoding::{Decodable, Encodable};
 use crate::{
@@ -6,7 +6,6 @@ use crate::{
     types::{Costume, EncodingError, Quaternion, Vector3},
 };
 use bytes::{Buf, BufMut};
-
 
 type Result<T> = std::result::Result<T, EncodingError>;
 
@@ -35,21 +34,23 @@ impl Packet {
     }
 
     pub fn check(buf: &mut Cursor<&[u8]>) -> Result<u64> {
-        log::debug!("Attempting check");
         let header_size = 16 + 2;
         let start_pos = buf.position();
         if buf.remaining() < header_size + 2 {
-            log::debug!("Not enough data for header");
+            // log::debug!(
+            //     "Not enough bytes for header: {} < {}",
+            //     buf.remaining(),
+            //     header_size + 2
+            // );
             return Err(EncodingError::NotEnoughData);
         }
 
         buf.advance(header_size);
-        let size = buf.get_u16().into();
+        let size = buf.get_u16_le().into();
         if buf.remaining() < size {
-            log::debug!("Not enough data for data");
+            log::debug!("Not enough bytes for data: {} < {}", buf.remaining(), size);
             return Err(EncodingError::NotEnoughData);
         }
-        log::debug!("Successful parse!");
         buf.advance(size);
         Ok(buf.position() - start_pos)
     }
@@ -175,31 +176,32 @@ where
 
         let mut id = [0; 16];
         buf.copy_to_slice(&mut id);
-        let p_type = buf.get_u16();
-        let p_size = buf.get_u16();
+        let p_type = buf.get_u16_le();
+        let p_size = buf.get_u16_le();
 
         if buf.remaining() < p_size.into() {
             log::debug!("data size failed");
             return Err(EncodingError::NotEnoughData);
         }
+        // log::debug!("Attempting packet decode of: {}", p_type);
 
         let data = match p_type {
             1 => PacketData::Init {
-                max_players: buf.get_u16(),
+                max_players: buf.get_u16_le(),
             },
             2 => PacketData::Player {
-                // pos: Vector3::new(buf.get_f32(), buf.get_f32(), buf.get_f32()),
+                // pos: Vector3::new(buf.get_f32_le(), buf.get_f32_le(), buf.get_f32_le()),
                 pos: Vector3::decode(buf)?,
                 rot: Quaternion::decode(buf)?,
                 animation_blend_weights: {
                     let mut weights = [0.0; 6];
                     for weight in &mut weights {
-                        *weight = buf.get_f32();
+                        *weight = buf.get_f32_le();
                     }
                     weights
                 },
-                act: buf.get_u16(),
-                sub_act: buf.get_u16(),
+                act: buf.get_u16_le(),
+                sub_act: buf.get_u16_le(),
             },
             3 => PacketData::Cap {
                 pos: Vector3::decode(buf)?,
@@ -221,18 +223,24 @@ where
                 },
                 is_it: buf.get_u8() != 0,
                 seconds: buf.get_u8(),
-                minutes: buf.get_u16(),
+                minutes: buf.get_u16_le(),
             },
-            6 => PacketData::Connect {
-                c_type: if buf.get_u8() == 0 {
+            6 => {
+                let c_type = if buf.get_u32_le() == 0 {
                     ConnectionType::FirstConnection
                 } else {
                     ConnectionType::Reconnecting
-                },
-                max_player: buf.get_u16(),
-                client_name: std::str::from_utf8(&buf.copy_to_bytes(CLIENT_NAME_SIZE)[..])?
-                    .to_string(),
-            },
+                };
+                let max_player = buf.get_u16_le();
+                let str_bytes = &buf.copy_to_bytes(CLIENT_NAME_SIZE)[..];
+                log::info!("Str bytes! {:x?}", str_bytes);
+                log::info!("From utf8! {:?}", std::str::from_utf8(str_bytes));
+                PacketData::Connect {
+                    c_type,
+                    max_player,
+                    client_name: std::str::from_utf8(str_bytes)?.to_string(),
+                }
+            }
             7 => PacketData::Disconnect,
             8 => PacketData::Costume(Costume {
                 body_name: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
@@ -241,7 +249,7 @@ where
                     .to_string(),
             }),
             9 => PacketData::Shine {
-                shine_id: buf.get_i32(),
+                shine_id: buf.get_i32_le(),
             },
             10 => PacketData::Capture {
                 model: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?.to_string(),
@@ -290,7 +298,7 @@ where
                 pos.encode(buf)?;
                 rot.encode(buf)?;
                 for weight in animation_blend_weights {
-                    buf.put_f32(*weight);
+                    buf.put_f32_le(*weight);
                 }
                 buf.put_u16(*act);
                 buf.put_u16(*sub_act);

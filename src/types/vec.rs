@@ -11,9 +11,9 @@ where
 {
     fn decode(buf: &mut R) -> Result<Self, EncodingError> {
         let mut vec = Self::default();
-        vec.x = buf.get_f32();
-        vec.y = buf.get_f32();
-        vec.z = buf.get_f32();
+        vec.x = buf.get_f32_le();
+        vec.y = buf.get_f32_le();
+        vec.z = buf.get_f32_le();
         Ok(vec)
     }
 }
@@ -23,9 +23,9 @@ where
     W: BufMut,
 {
     fn encode(&self, buf: &mut W) -> Result<(), EncodingError> {
-        buf.put_f32(self.x);
-        buf.put_f32(self.y);
-        buf.put_f32(self.z);
+        buf.put_f32_le(self.x);
+        buf.put_f32_le(self.y);
+        buf.put_f32_le(self.z);
         Ok(())
     }
 }

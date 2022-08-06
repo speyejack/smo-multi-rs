@@ -2,11 +2,10 @@ use crate::{
     client::{ClientMap, SyncClient},
     cmds::{Command, ServerCommand},
     guid::Guid,
-    net::{Packet, PacketData},
+    net::{connection, ConnectionType, Packet, PacketData},
     settings::SyncSettings,
-    types::SMOError,
+    types::{ClientInitError, Result, SMOError},
 };
-use anyhow::Result;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -45,9 +44,11 @@ impl Coordinator {
 
     async fn handle_command(&mut self, cmd: Command) -> Result<bool> {
         match cmd {
-            Command::Server(ServerCommand::NewPlayer { .. }) => {
-                self.add_client(cmd).await?;
-            }
+            Command::Server(sc) => match &sc {
+                &ServerCommand::NewPlayer { .. } => self.add_client(sc).await?,
+                &ServerCommand::DisconnectPlayer { guid } => self.disconnect_player(guid).await?,
+                &ServerCommand::Shutdown => return Ok(false),
+            },
             Command::Packet(packet) => {
                 match &packet.data {
                     PacketData::Costume(_) => {
@@ -105,9 +106,9 @@ impl Coordinator {
                 };
                 self.broadcast(packet).await?;
             }
-            _ => todo!(),
+            Command::Cli(_) => todo!(),
         }
-        todo!()
+        Ok(true)
     }
 
     fn get_client(&self, id: &Guid) -> std::result::Result<&SyncClient, SMOError> {
@@ -118,11 +119,101 @@ impl Coordinator {
         self.to_clients.get(id).ok_or(SMOError::InvalidID(*id))
     }
 
-    async fn add_client(&mut self, _cmd: Command) -> Result<()> {
-        todo!()
+    async fn add_client(&mut self, cmd: ServerCommand) -> Result<()> {
+        let (mut cli, packet, comm) = match cmd {
+            ServerCommand::NewPlayer {
+                cli,
+                connect_packet,
+                comm,
+            } => (cli, connect_packet, comm),
+            _ => unreachable!(),
+        };
+
+        let (connection_type, client_name) = match &packet.data {
+            PacketData::Connect {
+                c_type,
+                client_name,
+                ..
+            } => (c_type, client_name),
+            _ => unreachable!(),
+        };
+
+        // Verify client allowed to connect
+        let can_connect = {
+            let settings = self.settings.read().await;
+            let max_players: usize = settings.max_players.into();
+            let banned_players = &settings.banned_players;
+            let banned_ips = &settings.banned_ips;
+
+            if max_players < self.clients.len() {
+                log::warn!(
+                    "Reached max players: {} <= {}",
+                    max_players,
+                    self.clients.len()
+                );
+                Err(SMOError::ClientInit(ClientInitError::TooManyPlayers))
+            } else if banned_players.contains(&cli.guid) {
+                Err(SMOError::ClientInit(ClientInitError::BannedID))
+            } else if banned_ips.contains(&cli.conn.addr.ip()) {
+                Err(SMOError::ClientInit(ClientInitError::BannedIP))
+            } else {
+                Ok(())
+            }
+        };
+
+        if let Err(e) = can_connect {
+            cli.disconnect().await?;
+            return Err(e);
+        }
+
+        let id = cli.guid;
+        match connection_type {
+            ConnectionType::FirstConnection => {
+                self.clients.insert(id, cli.data.clone());
+            }
+            ConnectionType::Reconnecting => match self.clients.get(&id) {
+                Some(prev_data) => {
+                    cli.data = prev_data.clone();
+                }
+                None => {
+                    self.clients.insert(id, cli.data.clone());
+                }
+            },
+        }
+        self.to_clients.insert(id, comm.clone());
+
+        tokio::spawn(async move { cli.handle_events().await });
+        let result = self.setup_player(comm, *packet).await;
+        if let Err(e) = result {
+            self.disconnect_player(id).await?;
+            return Err(e);
+        }
+        Ok(())
     }
 
-    async fn sync_all_shines(&mut self) {
+    async fn setup_player(&mut self, comm: mpsc::Sender<Command>, packet: Packet) -> Result<()> {
+        for other_cli in self.clients.values() {
+            let other_cli = other_cli.read().await;
+            if let Some(p) = &other_cli.last_game_packet {
+                comm.send(Command::Packet(p.clone())).await?;
+            }
+        }
+
+        self.broadcast(packet).await
+    }
+
+    async fn disconnect_player(&mut self, guid: Guid) -> Result<()> {
+        log::info!("Disconnecting player {}", guid);
+        self.clients.remove(&guid);
+        if let Some(comm) = self.to_clients.remove(&guid) {
+            comm.send(Command::Packet(Packet::new(guid, PacketData::Disconnect)))
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn sync_all_shines(&mut self) -> Result<()> {
         unimplemented!()
     }
 
@@ -133,10 +224,10 @@ impl Coordinator {
         Ok(())
     }
 
-    async fn shutdown(self) {
-        for cli in self.to_clients.values() {
-            // Eat all errors
-            let _ = cli.send(Command::Server(ServerCommand::Shutdown)).await;
+    async fn shutdown(mut self) {
+        let active_clients = self.to_clients.clone();
+        for guid in active_clients.keys() {
+            let _ = self.disconnect_player(*guid).await;
         }
     }
 }

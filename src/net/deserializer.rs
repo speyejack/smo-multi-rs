@@ -1,5 +1,3 @@
-
-
 use crate::types::EncodingError;
 use bytes::{Buf, Bytes};
 use serde::Deserializer;
@@ -108,28 +106,28 @@ impl<'de> Deserializer<'de> for &'de mut SMODeserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn deserialize_string<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn deserialize_option<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
@@ -160,26 +158,26 @@ impl<'de> Deserializer<'de> for &'de mut SMODeserializer {
     fn deserialize_newtype_struct<V>(
         self,
         _name: &'static str,
-        _visitor: V,
+        visitor: V,
     ) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        todo!()
+        visitor.visit_newtype_struct(self)
     }
 
     fn deserialize_seq<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn deserialize_tuple<V>(self, _len: usize, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn deserialize_tuple_struct<V>(
@@ -191,14 +189,14 @@ impl<'de> Deserializer<'de> for &'de mut SMODeserializer {
     where
         V: serde::de::Visitor<'de>,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn deserialize_map<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        todo!()
+        unimplemented!()
     }
 
     fn deserialize_struct<V>(

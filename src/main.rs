@@ -15,7 +15,7 @@ use cmds::{Cli, Command};
 use coordinator::Coordinator;
 
 use server::Server;
-use settings::SyncSettings;
+use settings::{Settings, SyncSettings};
 use std::{
     collections::{HashMap, HashSet},
     io::Write,
@@ -29,20 +29,32 @@ use tokio::{
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let bind_addr = "127.0.0.1:61884".parse().unwrap();
-    let (to_coord, server, coordinator) = create_default_server();
+    let bind_addr = "0.0.0.0:61884".parse().unwrap();
+    let (_to_coord, server, coordinator) = create_default_server();
     let serv_task = tokio::task::spawn(server.listen_for_clients(bind_addr));
     let coord_task = tokio::task::spawn(coordinator.handle_commands());
-    let parser_task = tokio::task::spawn(parse_commands(to_coord));
+    // let parser_task = tokio::task::spawn(parse_commands(to_coord));
 
-    let _results = tokio::join!(serv_task, coord_task, parser_task);
+    // let _results = tokio::join!(serv_task, coord_task, parser_task);
+    let _results = tokio::join!(serv_task, coord_task);
     Ok(())
 }
 
 fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
+    let default_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        default_panic(info);
+        std::process::exit(1);
+    }));
     env_logger::init();
     let (to_coord, from_clients) = mpsc::channel(100);
-    let settings = SyncSettings::default();
+
+    let settings = Settings {
+        max_players: 4,
+        ..Settings::default()
+    };
+    let settings = Arc::new(RwLock::new(settings));
+
     let server = Server {
         settings: settings.clone(),
         to_coord: to_coord.clone(),
@@ -98,6 +110,7 @@ mod test {
 
     use super::*;
 
+    // #[ignore]
     #[tokio::test]
     async fn client_connect() -> Result<()> {
         let addr = "127.0.0.1:61884".parse().unwrap();

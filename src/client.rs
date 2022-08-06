@@ -1,11 +1,15 @@
 use crate::cmds::Command;
+use crate::cmds::ServerCommand;
 use crate::guid::Guid;
+use crate::net::connection;
 use crate::net::connection::Connection;
 use crate::net::Packet;
 use crate::net::PacketData;
 use crate::settings::SyncSettings;
+use crate::types::ClientInitError;
 use crate::types::{Costume, SMOError};
 use crate::types::{EncodingError, Result};
+use log::info;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,6 +23,7 @@ pub type SyncClient = Arc<RwLock<ClientData>>;
 
 #[derive(Debug)]
 pub struct Client {
+    pub name: String,
     pub data: SyncClient,
     pub guid: Guid,
     pub alive: bool,
@@ -41,6 +46,13 @@ pub struct ClientData {
     pub costume: Costume,
 }
 
+#[derive(Debug)]
+enum Origin {
+    Internal,
+    External,
+}
+
+#[derive(Debug)]
 enum ClientEvent {
     Packet(Packet),
     Command(Command),
@@ -50,9 +62,18 @@ impl Client {
     pub async fn handle_events(mut self) -> Result<()> {
         while self.alive {
             let event = self.read_event().await;
+
+            // log::debug!("Event: {:?}", &event);
             let result = match event {
-                Ok(ClientEvent::Packet(p)) => self.handle_packet(p).await,
-                Ok(ClientEvent::Command(c)) => self.handle_command(c).await,
+                Ok((Origin::External, ClientEvent::Packet(p))) => self.handle_packet(p).await,
+                Ok((Origin::Internal, ClientEvent::Packet(p))) => self.send_packet(&p).await,
+                Ok((_, ClientEvent::Command(c))) => self.handle_command(c).await,
+                Err(SMOError::Encoding(EncodingError::ConnectionClose))
+                | Err(SMOError::Encoding(EncodingError::ConnectionReset))
+                | Err(SMOError::RecvChannel) => {
+                    self.alive = false;
+                    break;
+                }
                 Err(e) => Err(e),
             };
 
@@ -65,17 +86,23 @@ impl Client {
         Ok(())
     }
 
-    async fn read_event(&mut self) -> Result<ClientEvent> {
+    async fn read_event(&mut self) -> Result<(Origin, ClientEvent)> {
         let event = select! {
             packet = self.conn.read_packet() => {
-                ClientEvent::Packet(packet?)
+                (Origin::External, ClientEvent::Packet(packet?))
             },
-            command = self.from_server.recv() => ClientEvent::Command(command.unwrap()),
+            command = self.from_server.recv() => (Origin::Internal, ClientEvent::Command(command.ok_or(SMOError::RecvChannel)?)),
         };
         Ok(event)
     }
 
     pub async fn disconnect(mut self) -> Result<()> {
+        log::warn!("Client {} disconnected", self.name);
+        self.to_coord
+            .send(Command::Server(ServerCommand::DisconnectPlayer {
+                guid: self.guid,
+            }))
+            .await?;
         self.conn.socket.shutdown().await?;
         Ok(())
     }
@@ -163,22 +190,36 @@ impl Client {
                     self.send_packet(&p).await?;
                 }
             }
-            _ => unimplemented!(),
+            _ => todo!(),
         }
         Ok(())
     }
 
     pub async fn send_packet(&mut self, packet: &Packet) -> Result<()> {
-        self.conn.write_packet(packet).await
+        // TODO Handle disconnect packets
+        if packet.id != self.guid {
+            if packet.id
+                == [
+                    63, 43, 68, 191, 202, 95, 117, 43, 5, 28, 207, 189, 239, 115, 237, 201,
+                ]
+                .into()
+            {
+                log::info!("Sending packet: {:?}", packet);
+            }
+
+            self.conn.write_packet(packet).await
+        } else {
+            Ok(())
+        }
     }
 
     pub async fn initialize_client(
         socket: TcpStream,
         to_coord: mpsc::Sender<Command>,
         settings: SyncSettings,
-    ) -> Result<(Self, mpsc::Sender<Command>)> {
+    ) -> Result<()> {
         log::debug!("Starting client initializaiton");
-        let (_to_cli, from_server) = mpsc::channel(10);
+        let (to_cli, from_server) = mpsc::channel(10);
 
         let l_set = settings.read().await;
         let max_players = l_set.max_players;
@@ -202,33 +243,33 @@ impl Client {
         log::debug!("Sent init packet");
         let connect = conn.read_packet().await?;
         log::debug!("Received connect packet");
-        // TODO Verified max connected players
-        match connect.data {
+        let new_player = match connect.data {
             PacketData::Connect {
-                c_type: _,
-                max_player: _,
-                client_name: _,
+                client_name: ref name,
+                ..
             } => {
+                let to_coord = to_coord.clone();
                 log::debug!("Created client data");
-                let _client = Client {
+                let client = Client {
+                    name: name.clone(),
                     data,
-                    guid: Guid::default(),
+                    guid: connect.id,
                     alive: true,
                     to_coord,
                     from_server,
                     conn,
                 };
-                // TODO Check if connection is new or reconnecting
-                // Then figure out if any stale clients remaining and remove them.
-                todo!()
+
+                Ok(Command::Server(ServerCommand::NewPlayer {
+                    cli: client,
+                    connect_packet: Box::new(connect),
+                    comm: to_cli,
+                }))
             }
-            _ => Err(SMOError::ClientInit),
-        }
+            _ => Err(SMOError::ClientInit(ClientInitError::BadHandshake)),
+        }?;
 
-        // TODO Have coordinator verify that this user can be online.
-        // Check max players and whitelist/banlist
-
-        // Have coordinator call setup_client
-        // TODO Send all of the last game packets to the client
+        to_coord.send(new_player).await?;
+        Ok(())
     }
 }

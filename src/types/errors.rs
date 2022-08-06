@@ -12,18 +12,20 @@ pub enum SMOError {
     #[error("Invalid id")]
     InvalidID(Guid),
 
-    #[error("Invalid encoding")]
+    #[error("Invalid encoding: {0}")]
     Encoding(#[from] EncodingError),
     #[error("Bad IO")]
     Io(#[from] std::io::Error),
     #[error("Bad cli parsing")]
     Clap(#[from] clap::Error),
-    #[error("Communication error")]
-    Channel(#[from] SendError<Command>),
+    #[error("Sending channel error")]
+    SendChannel(#[from] SendError<Command>),
+    #[error("Receiving channel error")]
+    RecvChannel,
     #[error("Join error")]
-    Join(#[from] JoinError),
-    #[error("Failed to initialize client")]
-    ClientInit,
+    ThreadJoin(#[from] JoinError),
+    #[error("Failed to initialize client: {0}")]
+    ClientInit(#[from] ClientInitError),
 }
 
 #[derive(Error, Debug)]
@@ -42,6 +44,18 @@ pub enum EncodingError {
     ConnectionClose,
     #[error("Serde error")]
     CustomError,
+}
+
+#[derive(Error, Debug)]
+pub enum ClientInitError {
+    #[error("Too many players already connected")]
+    TooManyPlayers,
+    #[error("Client IP address banned")]
+    BannedIP,
+    #[error("Client name banned")]
+    BannedID,
+    #[error("Client handshake failed")]
+    BadHandshake,
 }
 
 impl SerError for EncodingError {

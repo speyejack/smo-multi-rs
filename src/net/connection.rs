@@ -1,4 +1,4 @@
-use std::io::Cursor;
+use std::{io::Cursor, net::SocketAddr};
 
 use bytes::{Buf, BytesMut};
 use tokio::{
@@ -14,6 +14,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct Connection {
+    pub addr: SocketAddr,
     pub socket: BufWriter<TcpStream>,
     pub buff: BytesMut,
 }
@@ -21,6 +22,7 @@ pub struct Connection {
 impl Connection {
     pub fn new(stream: TcpStream) -> Self {
         Connection {
+            addr: stream.peer_addr().unwrap(),
             socket: BufWriter::new(stream),
             buff: BytesMut::with_capacity(1024),
         }
@@ -30,14 +32,11 @@ impl Connection {
         let mut buf = Cursor::new(&self.buff[..]);
         match Packet::check(&mut buf) {
             Ok(_) => {
-                log::debug!("Packet checked successfully");
                 let len = buf.position() as usize;
 
                 buf.set_position(0);
 
-                log::debug!("Attempting packet decode");
                 let packet = Packet::decode(&mut buf)?;
-                log::debug!("Packet decoded");
                 self.buff.advance(len);
 
                 Ok(Some(packet))
@@ -54,7 +53,6 @@ impl Connection {
             }
 
             let read_amount = self.socket.read_buf(&mut self.buff).await?;
-            log::debug!("Got amount: {}", read_amount);
             if read_amount == 0 {
                 if self.buff.is_empty() {
                     return Err(EncodingError::ConnectionClose.into());
