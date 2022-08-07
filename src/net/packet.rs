@@ -1,20 +1,25 @@
-use std::io::Cursor;
+use std::{fmt::Debug, io::Cursor};
 
 use super::encoding::{Decodable, Encodable};
 use crate::{
     guid::Guid,
     types::{Costume, EncodingError, Quaternion, Vector3},
 };
-use bytes::{Buf, BufMut};
+use bytes::{Buf, BufMut, BytesMut};
+use quickcheck::Arbitrary;
 
 type Result<T> = std::result::Result<T, EncodingError>;
 
+pub const MAX_PACKET_SIZE: usize = 300;
+
 const COSTUME_NAME_SIZE: usize = 0x20;
-const STAGE_NAME_SIZE: usize = 0x30;
+const CAP_ANIM_SIZE: usize = 0x30;
+const STAGE_GAME_NAME_SIZE: usize = 0x40;
+const STAGE_CHANGE_NAME_SIZE: usize = 0x30;
 const STAGE_ID_SIZE: usize = 0x10;
 const CLIENT_NAME_SIZE: usize = COSTUME_NAME_SIZE;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Packet {
     pub id: Guid,
     pub data_size: u16,
@@ -37,7 +42,7 @@ impl Packet {
         let header_size = 16 + 2;
         let start_pos = buf.position();
         if buf.remaining() < header_size + 2 {
-            // log::debug!(
+            // tracing::debug!(
             //     "Not enough bytes for header: {} < {}",
             //     buf.remaining(),
             //     header_size + 2
@@ -47,8 +52,9 @@ impl Packet {
 
         buf.advance(header_size);
         let size = buf.get_u16_le().into();
+        // tracing::info!("Size: {}", size);
         if buf.remaining() < size {
-            log::debug!("Not enough bytes for data: {} < {}", buf.remaining(), size);
+            tracing::trace!("Not enough bytes for data: {} < {}", buf.remaining(), size);
             return Err(EncodingError::NotEnoughData);
         }
         buf.advance(size);
@@ -56,7 +62,7 @@ impl Packet {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PacketData {
     Unhandled {
         tag: u16,
@@ -86,7 +92,7 @@ pub enum PacketData {
     Tag {
         update_type: TagUpdate,
         is_it: bool,
-        seconds: u8,
+        seconds: u16,
         minutes: u16,
     },
     Connect {
@@ -117,18 +123,19 @@ impl PacketData {
             Self::Unhandled { data, .. } => data.len(),
             Self::Init { .. } => 2,
             Self::Player { .. } => 0x38,
-            Self::Cap { .. } => 0x50,
-            Self::Game { .. } => 0x42,
+            Self::Cap { .. } => 29 + CAP_ANIM_SIZE + 3,
+            Self::Game { .. } => 2 + STAGE_GAME_NAME_SIZE,
             Self::Tag { .. } => 6,
             Self::Connect { .. } => 6 + CLIENT_NAME_SIZE,
             Self::Disconnect { .. } => 0,
             Self::Costume { .. } => COSTUME_NAME_SIZE * 2,
             Self::Shine { .. } => 4,
             Self::Capture { .. } => COSTUME_NAME_SIZE,
-            Self::ChangeStage { .. } => STAGE_ID_SIZE + STAGE_NAME_SIZE + 2,
+            Self::ChangeStage { .. } => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
             Self::Command { .. } => 0,
         }
     }
+
     fn get_type_id(&self) -> u16 {
         match self {
             Self::Unhandled { tag, .. } => *tag,
@@ -146,17 +153,36 @@ impl PacketData {
             Self::Command { .. } => 12,
         }
     }
+
+    pub fn get_type_name(&self) -> String {
+        match self {
+            Self::Unhandled { .. } => "unhandled",
+            Self::Init { .. } => "init",
+            Self::Player { .. } => "player",
+            Self::Cap { .. } => "cap",
+            Self::Game { .. } => "game",
+            Self::Tag { .. } => "tag",
+            Self::Connect { .. } => "connect",
+            Self::Disconnect { .. } => "disconnect",
+            Self::Costume { .. } => "costume",
+            Self::Shine { .. } => "shine",
+            Self::Capture { .. } => "capture",
+            Self::ChangeStage { .. } => "changeStage",
+            Self::Command { .. } => "command",
+        }
+        .to_string()
+    }
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionType {
     FirstConnection,
     Reconnecting,
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TagUpdate {
     Time = 1,
     State = 2,
@@ -170,7 +196,7 @@ where
 {
     fn decode(buf: &mut R) -> std::result::Result<Self, EncodingError> {
         if buf.remaining() < (16 + 2 + 2) {
-            log::debug!("Header size failed");
+            tracing::trace!("Header size failed");
             return Err(EncodingError::NotEnoughData);
         }
 
@@ -180,10 +206,10 @@ where
         let p_size = buf.get_u16_le();
 
         if buf.remaining() < p_size.into() {
-            log::debug!("data size failed");
+            tracing::trace!("data size failed");
             return Err(EncodingError::NotEnoughData);
         }
-        // log::debug!("Attempting packet decode of: {}", p_type);
+        // tracing::debug!("Attempting packet decode of: {}", p_type);
 
         let data = match p_type {
             1 => PacketData::Init {
@@ -203,17 +229,21 @@ where
                 act: buf.get_u16_le(),
                 sub_act: buf.get_u16_le(),
             },
-            3 => PacketData::Cap {
-                pos: Vector3::decode(buf)?,
-                rot: Quaternion::decode(buf)?,
-                cap_out: buf.get_u8() != 0,
-                cap_anim: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
-                    .to_string(),
-            },
+            3 => {
+                let packet = PacketData::Cap {
+                    pos: Vector3::decode(buf)?,
+                    rot: Quaternion::decode(buf)?,
+                    cap_out: buf.get_u8() != 0,
+                    cap_anim: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
+                        .to_string(),
+                };
+                buf.advance(3);
+                packet
+            }
             4 => PacketData::Game {
                 is_2d: buf.get_u8() != 0,
                 scenario_num: buf.get_u8(),
-                stage: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?.to_string(),
+                stage: buf_size_to_string(buf, STAGE_GAME_NAME_SIZE)?,
             },
             5 => PacketData::Tag {
                 update_type: if buf.get_u8() == 1 {
@@ -222,41 +252,38 @@ where
                     TagUpdate::State
                 },
                 is_it: buf.get_u8() != 0,
-                seconds: buf.get_u8(),
+                seconds: buf.get_u16_le(),
                 minutes: buf.get_u16_le(),
             },
             6 => {
+                tracing::debug!("Parsing connect: {}", buf.remaining());
                 let c_type = if buf.get_u32_le() == 0 {
                     ConnectionType::FirstConnection
                 } else {
                     ConnectionType::Reconnecting
                 };
                 let max_player = buf.get_u16_le();
-                let str_bytes = &buf.copy_to_bytes(CLIENT_NAME_SIZE)[..];
-                log::info!("Str bytes! {:x?}", str_bytes);
-                log::info!("From utf8! {:?}", std::str::from_utf8(str_bytes));
+                let client_name = buf_size_to_string(buf, CLIENT_NAME_SIZE)?;
                 PacketData::Connect {
                     c_type,
                     max_player,
-                    client_name: std::str::from_utf8(str_bytes)?.to_string(),
+                    client_name,
                 }
             }
             7 => PacketData::Disconnect,
             8 => PacketData::Costume(Costume {
-                body_name: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
-                    .to_string(),
-                cap_name: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
-                    .to_string(),
+                body_name: buf_size_to_string(buf, COSTUME_NAME_SIZE)?,
+                cap_name: buf_size_to_string(buf, COSTUME_NAME_SIZE)?,
             }),
             9 => PacketData::Shine {
                 shine_id: buf.get_i32_le(),
             },
             10 => PacketData::Capture {
-                model: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?.to_string(),
+                model: buf_size_to_string(buf, COSTUME_NAME_SIZE)?,
             },
             11 => PacketData::ChangeStage {
-                stage: std::str::from_utf8(&buf.copy_to_bytes(STAGE_NAME_SIZE)[..])?.to_string(),
-                id: std::str::from_utf8(&buf.copy_to_bytes(STAGE_ID_SIZE)[..])?.to_string(),
+                stage: buf_size_to_string(buf, STAGE_CHANGE_NAME_SIZE)?,
+                id: buf_size_to_string(buf, STAGE_ID_SIZE)?,
                 scenerio: buf.get_i8(),
                 sub_scenario: buf.get_u8(),
             },
@@ -266,6 +293,15 @@ where
                 data: buf.copy_to_bytes(p_size.into())[..].to_vec(),
             },
         };
+
+        let excess_padding = data.get_size() - p_size as usize;
+        if excess_padding > 0 {
+            tracing::debug!(
+                "Removing extra padding from struct: {} bytes",
+                excess_padding
+            );
+            buf.advance(excess_padding);
+        }
 
         Ok(Packet {
             id: id.into(),
@@ -281,12 +317,12 @@ where
 {
     fn encode(&self, buf: &mut W) -> Result<()> {
         buf.put_slice(&self.id.id[..]);
-        buf.put_u16(self.data.get_type_id());
-        buf.put_u16(self.data_size);
+        buf.put_u16_le(self.data.get_type_id());
+        buf.put_u16_le(self.data_size);
         match &self.data {
             PacketData::Unhandled { data, .. } => buf.put_slice(&data[..]),
             PacketData::Init { max_players } => {
-                buf.put_u16(*max_players);
+                buf.put_u16_le(*max_players);
             }
             PacketData::Player {
                 pos,
@@ -300,8 +336,8 @@ where
                 for weight in animation_blend_weights {
                     buf.put_f32_le(*weight);
                 }
-                buf.put_u16(*act);
-                buf.put_u16(*sub_act);
+                buf.put_u16_le(*act);
+                buf.put_u16_le(*sub_act);
             }
             PacketData::Cap {
                 pos,
@@ -312,7 +348,7 @@ where
                 pos.encode(buf)?;
                 rot.encode(buf)?;
                 buf.put_u8((*cap_out).into());
-                buf.put_slice(&cap_anim.as_bytes()[..COSTUME_NAME_SIZE])
+                buf.put_slice(&str_to_sized_array::<CAP_ANIM_SIZE>(cap_anim));
             }
             PacketData::Game {
                 is_2d,
@@ -321,7 +357,7 @@ where
             } => {
                 buf.put_u8((*is_2d).into());
                 buf.put_u8(*scenario_num);
-                buf.put_slice(&stage.as_bytes()[..COSTUME_NAME_SIZE])
+                buf.put_slice(&str_to_sized_array::<STAGE_GAME_NAME_SIZE>(stage));
             }
             PacketData::Tag {
                 update_type,
@@ -330,13 +366,13 @@ where
                 minutes,
             } => {
                 let tag = match update_type {
-                    TagUpdate::Time => 0,
-                    TagUpdate::State => 1,
+                    TagUpdate::Time => 1,
+                    TagUpdate::State => 2,
                 };
                 buf.put_u8(tag);
                 buf.put_u8((*is_it).into());
-                buf.put_u8(*seconds);
-                buf.put_u16(*minutes);
+                buf.put_u16_le(*seconds);
+                buf.put_u16_le(*minutes);
             }
             PacketData::Connect {
                 c_type,
@@ -347,33 +383,93 @@ where
                     ConnectionType::FirstConnection => 0,
                     ConnectionType::Reconnecting => 1,
                 };
-                buf.put_u8(tag);
-                buf.put_u16(*max_player);
-                buf.put_slice(&client_name.as_bytes()[..COSTUME_NAME_SIZE])
+                buf.put_u32_le(tag);
+                buf.put_u16_le(*max_player);
+                buf.put_slice(&str_to_sized_array::<CLIENT_NAME_SIZE>(client_name));
             }
             PacketData::Disconnect => {}
             PacketData::Costume(Costume {
                 body_name,
                 cap_name,
             }) => {
-                buf.put_slice(&body_name.as_bytes()[..COSTUME_NAME_SIZE]);
-                buf.put_slice(&cap_name.as_bytes()[..COSTUME_NAME_SIZE]);
+                buf.put_slice(&str_to_sized_array::<COSTUME_NAME_SIZE>(body_name));
+                buf.put_slice(&str_to_sized_array::<COSTUME_NAME_SIZE>(cap_name));
             }
-            PacketData::Shine { shine_id } => buf.put_i32(*shine_id),
-            PacketData::Capture { model } => buf.put_slice(&model.as_bytes()[..COSTUME_NAME_SIZE]),
+            PacketData::Shine { shine_id } => buf.put_i32_le(*shine_id),
+            PacketData::Capture { model } => {
+                buf.put_slice(&str_to_sized_array::<COSTUME_NAME_SIZE>(model))
+            }
             PacketData::ChangeStage {
                 stage,
                 id,
                 scenerio,
                 sub_scenario,
             } => {
-                buf.put_slice(&stage.as_bytes()[..COSTUME_NAME_SIZE]);
-                buf.put_slice(&id.as_bytes()[..COSTUME_NAME_SIZE]);
+                buf.put_slice(&str_to_sized_array::<STAGE_CHANGE_NAME_SIZE>(stage));
+                buf.put_slice(&str_to_sized_array::<STAGE_ID_SIZE>(id));
                 buf.put_i8(*scenerio);
                 buf.put_u8(*sub_scenario);
             }
             PacketData::Command => {}
         }
+
+        let excess_padding = self.data_size as usize - self.data.get_size();
+        if excess_padding > 0 {
+            tracing::debug!("Adding extra padding to struct: {} bytes", excess_padding);
+            for _ in 0..excess_padding {
+                buf.put_u8(0);
+            }
+        }
+
         Ok(())
+    }
+}
+
+fn str_to_sized_array<const N: usize>(s: &str) -> [u8; N] {
+    let mut bytes = [0; N];
+    for (b, c) in bytes.iter_mut().zip(s.as_bytes()) {
+        *b = *c;
+    }
+    bytes
+}
+
+fn buf_size_to_string(buf: &mut impl Buf, size: usize) -> Result<String> {
+    Ok(std::str::from_utf8(&buf.copy_to_bytes(size)[..])?
+        .trim_matches(char::from(0))
+        .to_string())
+}
+
+impl Arbitrary for Packet {
+    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+        let options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        let mut buff = BytesMut::with_capacity(MAX_PACKET_SIZE);
+
+        let enum_num = g.choose(&options).unwrap();
+        let size = match enum_num {
+            1 => 2,
+            2 => 0x38,
+            3 => 0x50,
+            4 => 0x42,
+            5 => 6,
+            6 => 6 + CLIENT_NAME_SIZE + 2,
+            7 => 0,
+            8 => COSTUME_NAME_SIZE * 2,
+            9 => 4,
+            10 => COSTUME_NAME_SIZE,
+            11 => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
+            12 => 0,
+            _ => 0,
+        };
+
+        for _ in 0..16 {
+            buff.put_u8(u8::arbitrary(g));
+        }
+        buff.put_u16_le(*enum_num);
+        buff.put_u16_le(size as u16);
+        for _ in 0..size {
+            buff.put_u8(u8::arbitrary(g) % 128);
+        }
+
+        Packet::decode(&mut Cursor::new(buff)).unwrap()
     }
 }

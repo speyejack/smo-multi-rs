@@ -1,6 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use hex::FromHex;
+use quickcheck::Arbitrary;
 use serde::{Deserialize, Serialize};
 
 use crate::types::EncodingError;

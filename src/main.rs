@@ -26,6 +26,7 @@ use tokio::{
     join,
     sync::{mpsc, RwLock},
 };
+use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -41,12 +42,17 @@ async fn main() -> Result<()> {
 }
 
 fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
+    // TODO Remove tihs debug panic option
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         default_panic(info);
         std::process::exit(1);
     }));
-    env_logger::init();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
     let (to_coord, from_clients) = mpsc::channel(100);
 
     let settings = Settings {
@@ -110,7 +116,7 @@ mod test {
 
     use super::*;
 
-    // #[ignore]
+    #[ignore]
     #[tokio::test]
     async fn client_connect() -> Result<()> {
         let addr = "127.0.0.1:61884".parse().unwrap();
@@ -129,21 +135,21 @@ mod test {
 
     async fn fake_client(addr: SocketAddr) -> Result<()> {
         let socket = tokio::net::TcpSocket::new_v4()?;
-        log::debug!("Connecting to server");
+        tracing::debug!("Connecting to server");
         let conn = socket.connect(addr).await?;
         let mut conn = Connection::new(conn);
-        log::debug!("Connected to server");
+        tracing::debug!("Connected to server");
 
-        log::debug!("Reading data from server");
+        tracing::debug!("Reading data from server");
         let result: Result<Packet> = Err(EncodingError::CustomError.into());
         while result.is_err() {
             let result = conn.read_packet().await;
-            log::debug!("Packet: {:?}", result);
+            tracing::debug!("Packet: {:?}", result);
             // let read = conn.read(&mut buff).await?;
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
-        log::debug!("Read data from server");
-        log::debug!("Read packet: {:?}", result);
+        tracing::debug!("Read data from server");
+        tracing::debug!("Read packet: {:?}", result);
         Ok(())
     }
 }

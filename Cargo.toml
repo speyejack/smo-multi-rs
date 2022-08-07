@@ -1,9 +1,13 @@
 [package]
-name = "smo-rs"
+name = "smoo"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "smoo"
+path = "src/lib.rs"
 
 [dependencies]
 tokio = {version="*", features=["full"]}
@@ -14,6 +18,12 @@ nalgebra = "0.31.0"
 bytes = "1.2.0"
 thiserror = "1.0.31"
 dashmap = "5.3.4"
-log = "0.4.17"
-env_logger = "0.9"
 hex = "0.4.3"
+tracing = {version="0.1.36"}
+tracing-subscriber = {version="0.3.15", features=["std", "env-filter", "fmt"]}
+quickcheck = "1.0.3"
+
+[worksapce]
+members = [
+		"examples/proxy",
+]

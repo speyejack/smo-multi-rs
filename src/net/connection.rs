@@ -6,7 +6,7 @@ use tokio::{
     net::TcpStream,
 };
 
-use super::{encoding::Decodable, Packet};
+use super::{encoding::Decodable, Packet, MAX_PACKET_SIZE};
 use crate::{
     net::encoding::Encodable,
     types::{EncodingError, Result},
@@ -36,6 +36,7 @@ impl Connection {
 
                 buf.set_position(0);
 
+                tracing::info!("Buff: {:?}", &self.buff[..]);
                 let packet = Packet::decode(&mut buf)?;
                 self.buff.advance(len);
 
@@ -52,28 +53,34 @@ impl Connection {
                 return Ok(packet);
             }
 
-            let read_amount = self.socket.read_buf(&mut self.buff).await?;
-            if read_amount == 0 {
-                if self.buff.is_empty() {
-                    return Err(EncodingError::ConnectionClose.into());
-                } else {
-                    return Err(EncodingError::ConnectionReset.into());
-                }
+            self.read_socket().await?
+        }
+    }
+
+    pub async fn read_socket(&mut self) -> Result<()> {
+        let read_amount = self.socket.read_buf(&mut self.buff).await?;
+        if read_amount == 0 {
+            if self.buff.is_empty() {
+                Err(EncodingError::ConnectionClose.into())
+            } else {
+                Err(EncodingError::ConnectionReset.into())
             }
+        } else {
+            Ok(())
         }
     }
 
     pub async fn write_packet(&mut self, packet: &Packet) -> Result<()> {
-        let mut buff = BytesMut::with_capacity(100);
+        let mut buff = BytesMut::with_capacity(MAX_PACKET_SIZE);
         packet.encode(&mut buff)?;
-        log::debug!("Writing packet: {:?}", packet);
+        tracing::trace!("Writing packet: {:?}", packet);
         let mut amount = 0;
         while amount < buff.len() {
             let last_write = self.socket.write(&buff[..]).await?;
             amount += last_write;
         }
         self.socket.flush().await?;
-        log::debug!("Packet written");
+        tracing::trace!("Packet written");
         Ok(())
     }
 }

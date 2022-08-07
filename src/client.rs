@@ -9,7 +9,6 @@ use crate::settings::SyncSettings;
 use crate::types::ClientInitError;
 use crate::types::{Costume, SMOError};
 use crate::types::{EncodingError, Result};
-use log::info;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,13 +16,16 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::select;
 use tokio::sync::{mpsc, RwLock};
+use tracing::info;
+use tracing::info_span;
+use tracing::instrument;
 
 pub type ClientMap = HashMap<Guid, SyncClient>;
 pub type SyncClient = Arc<RwLock<ClientData>>;
 
 #[derive(Debug)]
 pub struct Client {
-    pub name: String,
+    pub display_name: String,
     pub data: SyncClient,
     pub guid: Guid,
     pub alive: bool,
@@ -34,6 +36,7 @@ pub struct Client {
 
 #[derive(Default, Clone, Debug)]
 pub struct ClientData {
+    pub name: String,
     pub shine_sync: HashSet<i32>,
     pub scenario: u8,
     pub is_2d: bool,
@@ -63,7 +66,7 @@ impl Client {
         while self.alive {
             let event = self.read_event().await;
 
-            // log::debug!("Event: {:?}", &event);
+            tracing::debug!("Event: {:?}", &event);
             let result = match event {
                 Ok((Origin::External, ClientEvent::Packet(p))) => self.handle_packet(p).await,
                 Ok((Origin::Internal, ClientEvent::Packet(p))) => self.send_packet(&p).await,
@@ -78,7 +81,7 @@ impl Client {
             };
 
             if let Err(e) = result {
-                log::warn!("Error with client {}: {}", self.guid, e)
+                tracing::warn!("Error with client {}: {}", self.guid, e)
             }
         }
 
@@ -97,7 +100,7 @@ impl Client {
     }
 
     pub async fn disconnect(mut self) -> Result<()> {
-        log::warn!("Client {} disconnected", self.name);
+        tracing::warn!("Client {} disconnected", self.display_name);
         self.to_coord
             .send(Command::Server(ServerCommand::DisconnectPlayer {
                 guid: self.guid,
@@ -198,14 +201,11 @@ impl Client {
     pub async fn send_packet(&mut self, packet: &Packet) -> Result<()> {
         // TODO Handle disconnect packets
         if packet.id != self.guid {
-            if packet.id
-                == [
-                    63, 43, 68, 191, 202, 95, 117, 43, 5, 28, 207, 189, 239, 115, 237, 201,
-                ]
-                .into()
-            {
-                log::info!("Sending packet: {:?}", packet);
-            }
+            tracing::info!(
+                "Sending packet: {}->{}",
+                packet.id,
+                packet.data.get_type_name()
+            );
 
             self.conn.write_packet(packet).await
         } else {
@@ -218,40 +218,40 @@ impl Client {
         to_coord: mpsc::Sender<Command>,
         settings: SyncSettings,
     ) -> Result<()> {
-        log::debug!("Starting client initializaiton");
         let (to_cli, from_server) = mpsc::channel(10);
 
         let l_set = settings.read().await;
         let max_players = l_set.max_players;
         drop(l_set);
 
-        log::debug!("Verified max players");
-        let data = ClientData {
-            settings,
-            ..ClientData::default()
-        };
-        let data = Arc::new(RwLock::new(data));
-
+        tracing::debug!("Initializing connection");
         let mut conn = Connection::new(socket);
-
-        log::debug!("Created client");
         conn.write_packet(&Packet::new(
             Guid::default(),
             PacketData::Init { max_players },
         ))
         .await?;
-        log::debug!("Sent init packet");
+
+        tracing::debug!("Waiting for reply");
         let connect = conn.read_packet().await?;
-        log::debug!("Received connect packet");
+
         let new_player = match connect.data {
             PacketData::Connect {
                 client_name: ref name,
                 ..
             } => {
-                let to_coord = to_coord.clone();
-                log::debug!("Created client data");
-                let client = Client {
+                let data = ClientData {
+                    settings,
                     name: name.clone(),
+                    ..ClientData::default()
+                };
+
+                let data = Arc::new(RwLock::new(data));
+
+                let to_coord = to_coord.clone();
+                tracing::debug!("Created client data");
+                let client = Client {
+                    display_name: name.trim_matches(char::from(0)).to_string(),
                     data,
                     guid: connect.id,
                     alive: true,

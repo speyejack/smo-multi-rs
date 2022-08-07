@@ -13,6 +13,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::{mpsc, RwLock};
+use tracing::{info_span, Instrument};
 type SyncShineBag = Arc<RwLock<HashSet<i32>>>;
 
 pub struct Coordinator {
@@ -33,7 +34,7 @@ impl Coordinator {
                     Ok(false) => break,
                     Ok(true) => {}
                     Err(e) => {
-                        log::warn!("Coordinator error: {e}")
+                        tracing::warn!("Coordinator error: {e}")
                     }
                 }
             }
@@ -96,7 +97,7 @@ impl Coordinator {
                                         client_sync_shines(channel, shine_bag, packet.id, &client)
                                             .await;
                                     if let Err(e) = result {
-                                        log::warn!("Initial shine sync failed: {e}")
+                                        tracing::warn!("Initial shine sync failed: {e}")
                                     }
                                 });
                             }
@@ -146,7 +147,7 @@ impl Coordinator {
             let banned_ips = &settings.banned_ips;
 
             if max_players < self.clients.len() {
-                log::warn!(
+                tracing::warn!(
                     "Reached max players: {} <= {}",
                     max_players,
                     self.clients.len()
@@ -182,7 +183,11 @@ impl Coordinator {
         }
         self.to_clients.insert(id, comm.clone());
 
-        tokio::spawn(async move { cli.handle_events().await });
+        let name = cli.display_name.clone();
+        tracing::info!("New client connected: {} ({})", &name, cli.guid);
+        let span = info_span!("client", name);
+        tokio::spawn(async move { cli.handle_events().await }.instrument(span));
+
         let result = self.setup_player(comm, *packet).await;
         if let Err(e) = result {
             self.disconnect_player(id).await?;
@@ -192,10 +197,40 @@ impl Coordinator {
     }
 
     async fn setup_player(&mut self, comm: mpsc::Sender<Command>, packet: Packet) -> Result<()> {
-        for other_cli in self.clients.values() {
+        tracing::debug!(
+            "Setting up player ({}) with {} other players",
+            packet.id,
+            self.clients.len()
+        );
+        let settings = self.settings.read().await;
+        let max_player = settings.max_players;
+
+        drop(settings);
+        // Sync connection, costumes, and last game packet
+        for (other_id, other_cli) in self.clients.iter() {
             let other_cli = other_cli.read().await;
-            if let Some(p) = &other_cli.last_game_packet {
-                comm.send(Command::Packet(p.clone())).await?;
+
+            let connect_packet = Packet::new(
+                *other_id,
+                PacketData::Connect {
+                    c_type: ConnectionType::FirstConnection,
+                    max_player,
+                    client_name: other_cli.name.clone(),
+                },
+            );
+
+            let costume_packet =
+                Packet::new(*other_id, PacketData::Costume(other_cli.costume.clone()));
+
+            let last_game_packet = other_cli.last_game_packet.clone();
+
+            drop(other_cli);
+
+            comm.send(Command::Packet(connect_packet)).await?;
+            comm.send(Command::Packet(costume_packet)).await?;
+
+            if let Some(p) = last_game_packet {
+                comm.send(Command::Packet(p)).await?;
             }
         }
 
@@ -203,11 +238,13 @@ impl Coordinator {
     }
 
     async fn disconnect_player(&mut self, guid: Guid) -> Result<()> {
-        log::info!("Disconnecting player {}", guid);
+        tracing::info!("Disconnecting player {}", guid);
         self.clients.remove(&guid);
         if let Some(comm) = self.to_clients.remove(&guid) {
-            comm.send(Command::Packet(Packet::new(guid, PacketData::Disconnect)))
-                .await?;
+            let packet = Packet::new(guid, PacketData::Disconnect);
+            self.broadcast(packet.clone()).await?;
+            let disconnect = Command::Packet(packet);
+            comm.send(disconnect).await?;
         }
 
         Ok(())

@@ -20,13 +20,13 @@ impl Server {
 
             let to_coord = self.to_coord.clone();
             let settings = self.settings.clone();
-            log::info!("New client attempting to connect");
+            tracing::info!("New client attempting to connect");
 
             tokio::spawn(async move {
                 let cli_result = Client::initialize_client(socket, to_coord, settings).await;
 
                 if let Err(e) = cli_result {
-                    log::warn!("Client failed to begin: {}", e)
+                    tracing::warn!("Client failed to begin: {}", e)
                 }
             });
         }
