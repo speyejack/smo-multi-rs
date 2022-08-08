@@ -36,7 +36,6 @@ impl Connection {
 
                 buf.set_position(0);
 
-                tracing::info!("Buff: {:?}", &self.buff[..]);
                 let packet = Packet::decode(&mut buf)?;
                 self.buff.advance(len);
 
