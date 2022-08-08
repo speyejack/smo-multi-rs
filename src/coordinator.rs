@@ -45,10 +45,10 @@ impl Coordinator {
 
     async fn handle_command(&mut self, cmd: Command) -> Result<bool> {
         match cmd {
-            Command::Server(sc) => match &sc {
-                &ServerCommand::NewPlayer { .. } => self.add_client(sc).await?,
-                &ServerCommand::DisconnectPlayer { guid } => self.disconnect_player(guid).await?,
-                &ServerCommand::Shutdown => return Ok(false),
+            Command::Server(sc) => match sc {
+                ServerCommand::NewPlayer { .. } => self.add_client(sc).await?,
+                ServerCommand::DisconnectPlayer { guid } => self.disconnect_player(guid).await?,
+                ServerCommand::Shutdown => return Ok(false),
             },
             Command::Packet(packet) => {
                 match &packet.data {
