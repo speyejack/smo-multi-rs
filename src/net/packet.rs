@@ -96,7 +96,7 @@ pub enum PacketData {
     Tag {
         update_type: TagUpdate,
         is_it: bool,
-        seconds: u16,
+        seconds: u8,
         minutes: u16,
     },
     Connect {
@@ -130,7 +130,7 @@ impl PacketData {
             Self::Player { .. } => 0x38,
             Self::Cap { .. } => 29 + CAP_ANIM_SIZE,
             Self::Game { .. } => 2 + STAGE_GAME_NAME_SIZE,
-            Self::Tag { .. } => 6, // Changing to 5 bytes
+            Self::Tag { .. } => 5,
             Self::Connect { .. } => 6 + CLIENT_NAME_SIZE,
             Self::Disconnect { .. } => 0,
             Self::Costume { .. } => COSTUME_NAME_SIZE * 2,
@@ -256,7 +256,7 @@ where
                     TagUpdate::State
                 },
                 is_it: buf.get_u8() != 0,
-                seconds: buf.get_u16_le(),
+                seconds: buf.get_u8(),
                 minutes: buf.get_u16_le(),
             },
             6 => {
@@ -377,7 +377,7 @@ where
                 };
                 buf.put_u8(tag);
                 buf.put_u8((*is_it).into());
-                buf.put_u16_le(*seconds);
+                buf.put_u8(*seconds);
                 buf.put_u16_le(*minutes);
             }
             PacketData::Connect {
