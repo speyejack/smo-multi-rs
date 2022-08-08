@@ -294,10 +294,11 @@ where
             },
         };
 
-        let excess_padding = data.get_size() - p_size as usize;
+        let excess_padding = p_size as usize - data.get_size();
         if excess_padding > 0 {
             tracing::debug!(
-                "Removing extra padding from struct: {} bytes",
+                "Removing extra padding from packet {}: {} bytes",
+                data.get_type_name(),
                 excess_padding
             );
             buf.advance(excess_padding);
