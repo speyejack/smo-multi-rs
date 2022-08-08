@@ -111,6 +111,7 @@ impl Client {
     }
 
     async fn handle_packet(&mut self, packet: Packet) -> Result<()> {
+        tracing::debug!("Handling packet: {}", &packet.data.get_type_name());
         let send_to_coord = match &packet.data {
             PacketData::Costume(costume) => {
                 // TODO: Figure out why shine sync code in original
