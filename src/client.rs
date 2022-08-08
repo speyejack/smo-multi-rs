@@ -66,7 +66,7 @@ impl Client {
         while self.alive {
             let event = self.read_event().await;
 
-            tracing::debug!("Event: {:?}", &event);
+            tracing::trace!("Event: {:?}", &event);
             let result = match event {
                 Ok((Origin::External, ClientEvent::Packet(p))) => self.handle_packet(p).await,
                 Ok((Origin::Internal, ClientEvent::Packet(p))) => self.send_packet(&p).await,
