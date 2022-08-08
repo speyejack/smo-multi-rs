@@ -413,14 +413,6 @@ where
             PacketData::Command => {}
         }
 
-        let excess_padding = self.data_size as usize - self.data.get_size();
-        if excess_padding > 0 {
-            tracing::debug!("Adding extra padding to struct: {} bytes", excess_padding);
-            for _ in 0..excess_padding {
-                buf.put_u8(0);
-            }
-        }
-
         Ok(())
     }
 }
