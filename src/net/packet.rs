@@ -38,6 +38,10 @@ impl Packet {
         }
     }
 
+    pub fn resize(&mut self) {
+        self.data_size = self.data.get_size() as u16;
+    }
+
     pub fn check(buf: &mut Cursor<&[u8]>) -> Result<u64> {
         let header_size = 16 + 2;
         let start_pos = buf.position();

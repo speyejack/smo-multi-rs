@@ -254,7 +254,8 @@ impl Coordinator {
         unimplemented!()
     }
 
-    async fn broadcast(&mut self, p: Packet) -> Result<()> {
+    async fn broadcast(&mut self, mut p: Packet) -> Result<()> {
+        p.resize();
         for cli in &mut self.to_clients.values() {
             cli.send(Command::Packet(p.clone())).await?;
         }
