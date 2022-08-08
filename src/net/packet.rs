@@ -123,13 +123,13 @@ impl PacketData {
             Self::Unhandled { data, .. } => data.len(),
             Self::Init { .. } => 2,
             Self::Player { .. } => 0x38,
-            Self::Cap { .. } => 29 + CAP_ANIM_SIZE + 3,
+            Self::Cap { .. } => 29 + CAP_ANIM_SIZE,
             Self::Game { .. } => 2 + STAGE_GAME_NAME_SIZE,
-            Self::Tag { .. } => 6,
+            Self::Tag { .. } => 6, // Changing to 5 bytes
             Self::Connect { .. } => 6 + CLIENT_NAME_SIZE,
             Self::Disconnect { .. } => 0,
             Self::Costume { .. } => COSTUME_NAME_SIZE * 2,
-            Self::Shine { .. } => 4,
+            Self::Shine { .. } => 4, // Changing to 5 bytes
             Self::Capture { .. } => COSTUME_NAME_SIZE,
             Self::ChangeStage { .. } => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
             Self::Command { .. } => 0,
