@@ -108,6 +108,7 @@ pub enum PacketData {
     Costume(Costume),
     Shine {
         shine_id: i32,
+        is_grand: bool,
     },
     Capture {
         model: String,
@@ -133,7 +134,7 @@ impl PacketData {
             Self::Connect { .. } => 6 + CLIENT_NAME_SIZE,
             Self::Disconnect { .. } => 0,
             Self::Costume { .. } => COSTUME_NAME_SIZE * 2,
-            Self::Shine { .. } => 4, // Changing to 5 bytes
+            Self::Shine { .. } => 5,
             Self::Capture { .. } => COSTUME_NAME_SIZE,
             Self::ChangeStage { .. } => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
             Self::Command { .. } => 0,
@@ -280,6 +281,7 @@ where
             }),
             9 => PacketData::Shine {
                 shine_id: buf.get_i32_le(),
+                is_grand: buf.get_u8() != 0,
             },
             10 => PacketData::Capture {
                 model: buf_size_to_string(buf, COSTUME_NAME_SIZE)?,
@@ -399,7 +401,10 @@ where
                 buf.put_slice(&str_to_sized_array::<COSTUME_NAME_SIZE>(body_name));
                 buf.put_slice(&str_to_sized_array::<COSTUME_NAME_SIZE>(cap_name));
             }
-            PacketData::Shine { shine_id } => buf.put_i32_le(*shine_id),
+            PacketData::Shine { shine_id, is_grand } => {
+                buf.put_i32_le(*shine_id);
+                buf.put_u8(if *is_grand { 1 } else { 0 });
+            }
             PacketData::Capture { model } => {
                 buf.put_slice(&str_to_sized_array::<COSTUME_NAME_SIZE>(model))
             }

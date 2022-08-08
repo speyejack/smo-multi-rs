@@ -55,7 +55,7 @@ impl Coordinator {
                     PacketData::Costume(_) => {
                         // TODO Sync client
                     }
-                    PacketData::Shine { shine_id } => {
+                    PacketData::Shine { shine_id, .. } => {
                         self.shine_bag.write().await.insert(*shine_id);
                         let client = self
                             .clients
@@ -290,6 +290,7 @@ async fn client_sync_shines(
                 *guid,
                 PacketData::Shine {
                     shine_id: *shine_id,
+                    is_grand: false,
                 },
             )))
             .await?;

@@ -154,7 +154,7 @@ impl Client {
                 }
                 true
             }
-            PacketData::Shine { shine_id } => {
+            PacketData::Shine { shine_id, .. } => {
                 let mut data = self.data.write().await;
                 if data.loaded_save {
                     data.shine_sync.insert(*shine_id);
