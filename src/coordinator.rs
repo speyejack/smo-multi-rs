@@ -53,23 +53,14 @@ impl Coordinator {
             Command::Packet(packet) => {
                 match &packet.data {
                     PacketData::Costume(_) => {
+                        self.sync_all_shines().await;
                         // TODO Sync client
                     }
                     PacketData::Shine { shine_id, .. } => {
                         self.shine_bag.write().await.insert(*shine_id);
-                        let client = self
-                            .clients
-                            .get(&packet.id)
-                            .ok_or(SMOError::InvalidID(packet.id))?;
-                        let client = client.clone();
-                        client_sync_shines(
-                            self.get_channel(&packet.id)?.clone(),
-                            self.shine_bag.clone(),
-                            packet.id,
-                            &client,
-                        )
-                        .await?;
-                        // self.client_sync_shines(&client).await;
+                        tracing::info!("Got moon {shine_id}");
+                        self.sync_all_shines().await?;
+
                         return Ok(true);
                     }
                     PacketData::Game {
@@ -251,7 +242,18 @@ impl Coordinator {
     }
 
     async fn sync_all_shines(&mut self) -> Result<()> {
-        unimplemented!()
+        for (guid, client) in &self.clients {
+            let channel = self.to_clients.get(guid).unwrap();
+            let sender_guid = Guid::default();
+            client_sync_shines(
+                channel.clone(),
+                self.shine_bag.clone(),
+                &sender_guid,
+                client,
+            )
+            .await?;
+        }
+        Ok(())
     }
 
     async fn broadcast(&mut self, mut p: Packet) -> Result<()> {
