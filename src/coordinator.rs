@@ -94,7 +94,7 @@ impl Coordinator {
                                     tokio::time::sleep(Duration::from_secs(15)).await;
 
                                     let result =
-                                        client_sync_shines(channel, shine_bag, packet.id, &client)
+                                        client_sync_shines(channel, shine_bag, &packet.id, &client)
                                             .await;
                                     if let Err(e) = result {
                                         tracing::warn!("Initial shine sync failed: {e}")
@@ -273,7 +273,7 @@ impl Coordinator {
 async fn client_sync_shines(
     to_client: mpsc::Sender<Command>,
     shine_bag: SyncShineBag,
-    guid: Guid,
+    guid: &Guid,
     client: &SyncClient,
 ) -> Result<()> {
     let client = client.read().await;
@@ -287,7 +287,7 @@ async fn client_sync_shines(
     for shine_id in mismatch {
         to_client
             .send(Command::Packet(Packet::new(
-                guid,
+                *guid,
                 PacketData::Shine {
                     shine_id: *shine_id,
                 },
