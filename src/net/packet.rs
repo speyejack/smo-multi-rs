@@ -21,25 +21,32 @@ const CLIENT_NAME_SIZE: usize = COSTUME_NAME_SIZE;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Packet {
+    pub header: PacketHeader,
+    pub data: PacketData,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PacketHeader {
     pub id: Guid,
     pub data_size: u16,
-    pub data: PacketData,
 }
 
 impl Packet {
     pub fn new(id: Guid, data: PacketData) -> Packet {
         Packet {
-            id,
-            data_size: data
-                .get_size()
-                .try_into()
-                .expect("Extremely large data size"),
+            header: PacketHeader {
+                id,
+                data_size: data
+                    .get_size()
+                    .try_into()
+                    .expect("Extremely large data size"),
+            },
             data,
         }
     }
 
     pub fn resize(&mut self) {
-        self.data_size = self.data.get_size() as u16;
+        self.header.data_size = self.data.get_size() as u16;
     }
 
     pub fn check(buf: &mut Cursor<&[u8]>) -> Result<u64> {
@@ -309,8 +316,10 @@ where
         }
 
         Ok(Packet {
-            id: id.into(),
-            data_size: p_size,
+            header: PacketHeader {
+                id: id.into(),
+                data_size: p_size,
+            },
             data,
         })
     }
@@ -321,9 +330,9 @@ where
     W: BufMut,
 {
     fn encode(&self, buf: &mut W) -> Result<()> {
-        buf.put_slice(&self.id.id[..]);
+        buf.put_slice(&self.header.id.id[..]);
         buf.put_u16_le(self.data.get_type_id());
-        buf.put_u16_le(self.data_size);
+        buf.put_u16_le(self.header.data_size);
         match &self.data {
             PacketData::Unhandled { data, .. } => buf.put_slice(&data[..]),
             PacketData::Init { max_players } => {

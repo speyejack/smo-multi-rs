@@ -186,7 +186,7 @@ impl Client {
     async fn handle_command(&mut self, command: Command) -> Result<()> {
         match command {
             Command::Packet(p) => {
-                if p.id == self.guid {
+                if p.header.id == self.guid {
                     if let crate::net::PacketData::Disconnect = p.data {
                         self.alive = false;
                     }
@@ -201,10 +201,10 @@ impl Client {
 
     pub async fn send_packet(&mut self, packet: &Packet) -> Result<()> {
         // TODO Handle disconnect packets
-        if packet.id != self.guid {
+        if packet.header.id != self.guid {
             tracing::debug!(
                 "Sending packet: {}->{}",
-                packet.id,
+                packet.header.id,
                 packet.data.get_type_name()
             );
 
@@ -254,7 +254,7 @@ impl Client {
                 let client = Client {
                     display_name: name.trim_matches(char::from(0)).to_string(),
                     data,
-                    guid: connect.id,
+                    guid: connect.header.id,
                     alive: true,
                     to_coord,
                     from_server,

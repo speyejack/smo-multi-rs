@@ -70,7 +70,7 @@ impl Coordinator {
                         if stage == "CapWorldHomeStage" && *scenario_num == 0 {
                             // TODO: Persist shrines
                         } else if stage == "WaterfallWordHomeStage" {
-                            let client = self.get_client(&packet.id)?;
+                            let client = self.get_client(&packet.header.id)?;
                             let mut data = client.write().await;
                             let was_speed_run = data.speedrun;
                             data.speedrun = true;
@@ -78,14 +78,18 @@ impl Coordinator {
 
                             if was_speed_run {
                                 let client = client.clone();
-                                let channel = self.get_channel(&packet.id)?.clone();
+                                let channel = self.get_channel(&packet.header.id)?.clone();
                                 let shine_bag = self.shine_bag.clone();
                                 tokio::spawn(async move {
                                     tokio::time::sleep(Duration::from_secs(15)).await;
 
-                                    let result =
-                                        client_sync_shines(channel, shine_bag, &packet.id, &client)
-                                            .await;
+                                    let result = client_sync_shines(
+                                        channel,
+                                        shine_bag,
+                                        &packet.header.id,
+                                        &client,
+                                    )
+                                    .await;
                                     if let Err(e) = result {
                                         tracing::warn!("Initial shine sync failed: {e}")
                                     }
@@ -189,7 +193,7 @@ impl Coordinator {
     async fn setup_player(&mut self, comm: mpsc::Sender<Command>, packet: Packet) -> Result<()> {
         tracing::debug!(
             "Setting up player ({}) with {} other players",
-            packet.id,
+            packet.header.id,
             self.clients.len()
         );
         let settings = self.settings.read().await;
