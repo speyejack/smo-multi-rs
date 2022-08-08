@@ -237,7 +237,6 @@ where
                     cap_anim: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
                         .to_string(),
                 };
-                buf.advance(3);
                 packet
             }
             4 => PacketData::Game {
