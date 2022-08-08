@@ -214,7 +214,6 @@ where
             tracing::trace!("data size failed");
             return Err(EncodingError::NotEnoughData);
         }
-        // tracing::debug!("Attempting packet decode of: {}", p_type);
 
         let data = match p_type {
             1 => PacketData::Init {
@@ -301,7 +300,7 @@ where
 
         let excess_padding = p_size as usize - data.get_size();
         if excess_padding > 0 {
-            tracing::debug!(
+            tracing::trace!(
                 "Removing extra padding from packet {}: {} bytes",
                 data.get_type_name(),
                 excess_padding
