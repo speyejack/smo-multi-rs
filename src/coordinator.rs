@@ -53,8 +53,7 @@ impl Coordinator {
             Command::Packet(packet) => {
                 match &packet.data {
                     PacketData::Costume(_) => {
-                        self.sync_all_shines().await;
-                        // TODO Sync client
+                        self.sync_all_shines().await?;
                     }
                     PacketData::Shine { shine_id, .. } => {
                         self.shine_bag.write().await.insert(*shine_id);
