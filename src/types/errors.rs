@@ -58,6 +58,23 @@ pub enum ClientInitError {
     BadHandshake,
 }
 
+impl SMOError {
+    pub fn severity(&self) -> ErrorSeverity {
+        match self {
+            Self::Encoding(EncodingError::ConnectionClose)
+            | Self::Encoding(EncodingError::ConnectionReset)
+            | Self::RecvChannel => ErrorSeverity::ClientFatal,
+            _ => ErrorSeverity::NonFatal,
+        }
+    }
+}
+
+pub enum ErrorSeverity {
+    ServerFatal,
+    ClientFatal,
+    NonFatal,
+}
+
 impl SerError for EncodingError {
     fn custom<T>(_msg: T) -> Self
     where

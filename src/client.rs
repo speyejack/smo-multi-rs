@@ -7,6 +7,7 @@ use crate::net::Packet;
 use crate::net::PacketData;
 use crate::settings::SyncSettings;
 use crate::types::ClientInitError;
+use crate::types::ErrorSeverity;
 use crate::types::{Costume, SMOError};
 use crate::types::{EncodingError, Result};
 use std::collections::{HashMap, HashSet};
@@ -71,12 +72,13 @@ impl Client {
                 Ok((Origin::External, ClientEvent::Packet(p))) => self.handle_packet(p).await,
                 Ok((Origin::Internal, ClientEvent::Packet(p))) => self.send_packet(&p).await,
                 Ok((_, ClientEvent::Command(c))) => self.handle_command(c).await,
-                Err(SMOError::Encoding(EncodingError::ConnectionClose))
-                | Err(SMOError::Encoding(EncodingError::ConnectionReset))
-                | Err(SMOError::RecvChannel) => {
-                    self.alive = false;
-                    break;
-                }
+                Err(e) => match e.severity() {
+                    ErrorSeverity::ClientFatal => {
+                        self.alive = false;
+                        break;
+                    }
+                    _ => Err(e),
+                },
                 Err(e) => Err(e),
             };
 
