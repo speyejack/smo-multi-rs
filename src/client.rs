@@ -202,7 +202,7 @@ impl Client {
     pub async fn send_packet(&mut self, packet: &Packet) -> Result<()> {
         // TODO Handle disconnect packets
         if packet.id != self.guid {
-            tracing::info!(
+            tracing::debug!(
                 "Sending packet: {}->{}",
                 packet.id,
                 packet.data.get_type_name()
