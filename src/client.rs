@@ -20,13 +20,13 @@ use tracing::info;
 use tracing::info_span;
 use tracing::instrument;
 
-pub type ClientMap = HashMap<Guid, SyncClient>;
-pub type SyncClient = Arc<RwLock<ClientData>>;
+pub type ClientMap = HashMap<Guid, SyncPlayer>;
+pub type SyncPlayer = Arc<RwLock<PlayerData>>;
 
 #[derive(Debug)]
 pub struct Client {
     pub display_name: String,
-    pub data: SyncClient,
+    pub player: SyncPlayer,
     pub guid: Guid,
     pub alive: bool,
     pub conn: Connection,
@@ -35,7 +35,7 @@ pub struct Client {
 }
 
 #[derive(Default, Clone, Debug)]
-pub struct ClientData {
+pub struct PlayerData {
     pub name: String,
     pub shine_sync: HashSet<i32>,
     pub scenario: u8,
@@ -116,7 +116,7 @@ impl Client {
             PacketData::Costume(costume) => {
                 // TODO: Figure out why shine sync code in original
                 // code base for costume packet
-                let mut data = self.data.write().await;
+                let mut data = self.player.write().await;
                 data.costume = costume.clone();
                 data.loaded_save = true;
                 true
@@ -126,7 +126,7 @@ impl Client {
                 scenario_num,
                 stage,
             } => {
-                let mut data = self.data.write().await;
+                let mut data = self.player.write().await;
                 data.is_2d = *is_2d;
                 data.scenario = *scenario_num;
                 data.last_game_packet = Some(packet.clone());
@@ -143,7 +143,7 @@ impl Client {
                 seconds,
                 minutes,
             } => {
-                let mut data = self.data.write().await;
+                let mut data = self.player.write().await;
                 match update_type {
                     crate::net::TagUpdate::Time => {
                         data.time = Duration::from_secs(*seconds as u64 + *minutes as u64 * 60);
@@ -155,7 +155,7 @@ impl Client {
                 true
             }
             PacketData::Shine { shine_id, .. } => {
-                let mut data = self.data.write().await;
+                let mut data = self.player.write().await;
                 if data.loaded_save {
                     data.shine_sync.insert(*shine_id);
                 }
@@ -241,10 +241,10 @@ impl Client {
                 client_name: ref name,
                 ..
             } => {
-                let data = ClientData {
+                let data = PlayerData {
                     settings,
                     name: name.clone(),
-                    ..ClientData::default()
+                    ..PlayerData::default()
                 };
 
                 let data = Arc::new(RwLock::new(data));
@@ -253,7 +253,7 @@ impl Client {
                 tracing::debug!("Created client data");
                 let client = Client {
                     display_name: name.trim_matches(char::from(0)).to_string(),
-                    data,
+                    player: data,
                     guid: connect.id,
                     alive: true,
                     to_coord,
