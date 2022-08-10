@@ -110,7 +110,7 @@ mod test {
 
     use crate::{
         cmds::ServerCommand,
-        net::{connection::Connection, Packet},
+        net::{connection::Connection, AnyPacket},
         types::EncodingError,
     };
 
@@ -141,7 +141,7 @@ mod test {
         tracing::debug!("Connected to server");
 
         tracing::debug!("Reading data from server");
-        let result: Result<Packet> = Err(EncodingError::CustomError.into());
+        let result: Result<AnyPacket> = Err(EncodingError::CustomError.into());
         while result.is_err() {
             let result = conn.read_packet().await;
             tracing::debug!("Packet: {:?}", result);

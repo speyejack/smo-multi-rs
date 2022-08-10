@@ -6,7 +6,7 @@ use tokio::{
     net::TcpStream,
 };
 
-use super::{encoding::Decodable, Packet, MAX_PACKET_SIZE};
+use super::{encoding::Decodable, AnyPacket, MAX_PACKET_SIZE};
 use crate::{
     net::encoding::Encodable,
     types::{EncodingError, Result},
@@ -28,15 +28,15 @@ impl Connection {
         }
     }
 
-    pub fn parse_packet(&mut self) -> Result<Option<Packet>> {
+    pub fn parse_packet(&mut self) -> Result<Option<AnyPacket>> {
         let mut buf = Cursor::new(&self.buff[..]);
-        match Packet::check(&mut buf) {
+        match AnyPacket::check(&mut buf) {
             Ok(_) => {
                 let len = buf.position() as usize;
 
                 buf.set_position(0);
 
-                let packet = Packet::decode(&mut buf)?;
+                let packet = AnyPacket::decode(&mut buf)?;
                 self.buff.advance(len);
 
                 Ok(Some(packet))
@@ -46,7 +46,7 @@ impl Connection {
         }
     }
 
-    pub async fn read_packet(&mut self) -> Result<Packet> {
+    pub async fn read_packet(&mut self) -> Result<AnyPacket> {
         loop {
             if let Some(packet) = self.parse_packet()? {
                 return Ok(packet);
@@ -69,7 +69,7 @@ impl Connection {
         }
     }
 
-    pub async fn write_packet(&mut self, packet: &Packet) -> Result<()> {
+    pub async fn write_packet(&mut self, packet: &AnyPacket) -> Result<()> {
         let mut buff = BytesMut::with_capacity(MAX_PACKET_SIZE);
         packet.encode(&mut buff)?;
         tracing::trace!("Writing packet: {:?}", packet);

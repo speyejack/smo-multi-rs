@@ -19,10 +19,18 @@ const STAGE_CHANGE_NAME_SIZE: usize = 0x30;
 const STAGE_ID_SIZE: usize = 0x10;
 const CLIENT_NAME_SIZE: usize = COSTUME_NAME_SIZE;
 
+pub type AnyPacket = Packet<AnyPacketData>;
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct Packet {
+pub struct Packet<T: PacketData> {
     pub header: PacketHeader,
-    pub data: PacketData,
+    pub data: T,
+}
+
+pub trait PacketData: Debug + Clone + PartialEq {
+    fn size(&self) -> usize;
+    fn tag(&self) -> u16;
+    fn short_name(&self) -> String;
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -31,15 +39,27 @@ pub struct PacketHeader {
     pub data_size: u16,
 }
 
-impl Packet {
-    pub fn new(id: Guid, data: PacketData) -> Packet {
-        Packet {
+impl PacketData for AnyPacketData {
+    fn size(&self) -> usize {
+        self.get_size()
+    }
+
+    fn tag(&self) -> u16 {
+        self.get_type_id()
+    }
+
+    fn short_name(&self) -> String {
+        self.get_type_name()
+    }
+}
+
+impl AnyPacket {
+    pub fn new(id: Guid, data: impl Into<AnyPacketData>) -> AnyPacket {
+        let data = data.into();
+        AnyPacket {
             header: PacketHeader {
                 id,
-                data_size: data
-                    .get_size()
-                    .try_into()
-                    .expect("Extremely large data size"),
+                data_size: data.size().try_into().expect("Extremely large data size"),
             },
             data,
         }
@@ -74,7 +94,7 @@ impl Packet {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum PacketData {
+pub enum AnyPacketData {
     Unhandled {
         tag: u16,
         data: Vec<u8>,
@@ -129,7 +149,7 @@ pub enum PacketData {
     Command,
 }
 
-impl PacketData {
+impl AnyPacketData {
     fn get_size(&self) -> usize {
         match self {
             Self::Unhandled { data, .. } => data.len(),
@@ -202,7 +222,7 @@ pub enum TagUpdate {
 
 impl TagUpdate {}
 
-impl<R> Decodable<R> for Packet
+impl<R> Decodable<R> for AnyPacket
 where
     R: Buf,
 {
@@ -223,10 +243,10 @@ where
         }
 
         let data = match p_type {
-            1 => PacketData::Init {
+            1 => AnyPacketData::Init {
                 max_players: buf.get_u16_le(),
             },
-            2 => PacketData::Player {
+            2 => AnyPacketData::Player {
                 // pos: Vector3::new(buf.get_f32_le(), buf.get_f32_le(), buf.get_f32_le()),
                 pos: Vector3::decode(buf)?,
                 rot: Quaternion::decode(buf)?,
@@ -241,7 +261,7 @@ where
                 sub_act: buf.get_u16_le(),
             },
             3 => {
-                let packet = PacketData::Cap {
+                let packet = AnyPacketData::Cap {
                     pos: Vector3::decode(buf)?,
                     rot: Quaternion::decode(buf)?,
                     cap_out: buf.get_u8() != 0,
@@ -250,12 +270,12 @@ where
                 };
                 packet
             }
-            4 => PacketData::Game {
+            4 => AnyPacketData::Game {
                 is_2d: buf.get_u8() != 0,
                 scenario_num: buf.get_u8(),
                 stage: buf_size_to_string(buf, STAGE_GAME_NAME_SIZE)?,
             },
-            5 => PacketData::Tag {
+            5 => AnyPacketData::Tag {
                 update_type: if buf.get_u8() == 1 {
                     TagUpdate::Time
                 } else {
@@ -274,32 +294,32 @@ where
                 };
                 let max_player = buf.get_u16_le();
                 let client_name = buf_size_to_string(buf, CLIENT_NAME_SIZE)?;
-                PacketData::Connect {
+                AnyPacketData::Connect {
                     c_type,
                     max_player,
                     client_name,
                 }
             }
-            7 => PacketData::Disconnect,
-            8 => PacketData::Costume(Costume {
+            7 => AnyPacketData::Disconnect,
+            8 => AnyPacketData::Costume(Costume {
                 body_name: buf_size_to_string(buf, COSTUME_NAME_SIZE)?,
                 cap_name: buf_size_to_string(buf, COSTUME_NAME_SIZE)?,
             }),
-            9 => PacketData::Shine {
+            9 => AnyPacketData::Shine {
                 shine_id: buf.get_i32_le(),
                 is_grand: buf.get_u8() != 0,
             },
-            10 => PacketData::Capture {
+            10 => AnyPacketData::Capture {
                 model: buf_size_to_string(buf, COSTUME_NAME_SIZE)?,
             },
-            11 => PacketData::ChangeStage {
+            11 => AnyPacketData::ChangeStage {
                 stage: buf_size_to_string(buf, STAGE_CHANGE_NAME_SIZE)?,
                 id: buf_size_to_string(buf, STAGE_ID_SIZE)?,
                 scenerio: buf.get_i8(),
                 sub_scenario: buf.get_u8(),
             },
-            12 => PacketData::Command {},
-            _ => PacketData::Unhandled {
+            12 => AnyPacketData::Command {},
+            _ => AnyPacketData::Unhandled {
                 tag: p_type,
                 data: buf.copy_to_bytes(p_size.into())[..].to_vec(),
             },
@@ -315,7 +335,7 @@ where
             buf.advance(excess_padding);
         }
 
-        Ok(Packet {
+        Ok(AnyPacket {
             header: PacketHeader {
                 id: id.into(),
                 data_size: p_size,
@@ -325,7 +345,7 @@ where
     }
 }
 
-impl<W> Encodable<W> for Packet
+impl<W> Encodable<W> for AnyPacket
 where
     W: BufMut,
 {
@@ -334,11 +354,11 @@ where
         buf.put_u16_le(self.data.get_type_id());
         buf.put_u16_le(self.header.data_size);
         match &self.data {
-            PacketData::Unhandled { data, .. } => buf.put_slice(&data[..]),
-            PacketData::Init { max_players } => {
+            AnyPacketData::Unhandled { data, .. } => buf.put_slice(&data[..]),
+            AnyPacketData::Init { max_players } => {
                 buf.put_u16_le(*max_players);
             }
-            PacketData::Player {
+            AnyPacketData::Player {
                 pos,
                 rot,
                 animation_blend_weights,
@@ -353,7 +373,7 @@ where
                 buf.put_u16_le(*act);
                 buf.put_u16_le(*sub_act);
             }
-            PacketData::Cap {
+            AnyPacketData::Cap {
                 pos,
                 rot,
                 cap_out,
@@ -364,7 +384,7 @@ where
                 buf.put_u8((*cap_out).into());
                 buf.put_slice(&str_to_sized_array::<CAP_ANIM_SIZE>(cap_anim));
             }
-            PacketData::Game {
+            AnyPacketData::Game {
                 is_2d,
                 scenario_num,
                 stage,
@@ -373,7 +393,7 @@ where
                 buf.put_u8(*scenario_num);
                 buf.put_slice(&str_to_sized_array::<STAGE_GAME_NAME_SIZE>(stage));
             }
-            PacketData::Tag {
+            AnyPacketData::Tag {
                 update_type,
                 is_it,
                 seconds,
@@ -388,7 +408,7 @@ where
                 buf.put_u8(*seconds);
                 buf.put_u16_le(*minutes);
             }
-            PacketData::Connect {
+            AnyPacketData::Connect {
                 c_type,
                 max_player,
                 client_name,
@@ -401,22 +421,22 @@ where
                 buf.put_u16_le(*max_player);
                 buf.put_slice(&str_to_sized_array::<CLIENT_NAME_SIZE>(client_name));
             }
-            PacketData::Disconnect => {}
-            PacketData::Costume(Costume {
+            AnyPacketData::Disconnect => {}
+            AnyPacketData::Costume(Costume {
                 body_name,
                 cap_name,
             }) => {
                 buf.put_slice(&str_to_sized_array::<COSTUME_NAME_SIZE>(body_name));
                 buf.put_slice(&str_to_sized_array::<COSTUME_NAME_SIZE>(cap_name));
             }
-            PacketData::Shine { shine_id, is_grand } => {
+            AnyPacketData::Shine { shine_id, is_grand } => {
                 buf.put_i32_le(*shine_id);
                 buf.put_u8(if *is_grand { 1 } else { 0 });
             }
-            PacketData::Capture { model } => {
+            AnyPacketData::Capture { model } => {
                 buf.put_slice(&str_to_sized_array::<COSTUME_NAME_SIZE>(model))
             }
-            PacketData::ChangeStage {
+            AnyPacketData::ChangeStage {
                 stage,
                 id,
                 scenerio,
@@ -427,7 +447,7 @@ where
                 buf.put_i8(*scenerio);
                 buf.put_u8(*sub_scenario);
             }
-            PacketData::Command => {}
+            AnyPacketData::Command => {}
         }
 
         Ok(())
@@ -448,7 +468,7 @@ fn buf_size_to_string(buf: &mut impl Buf, size: usize) -> Result<String> {
         .to_string())
 }
 
-impl Arbitrary for Packet {
+impl Arbitrary for AnyPacket {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
         let options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         let mut buff = BytesMut::with_capacity(MAX_PACKET_SIZE);
@@ -479,6 +499,6 @@ impl Arbitrary for Packet {
             buff.put_u8(u8::arbitrary(g) % 128);
         }
 
-        Packet::decode(&mut Cursor::new(buff)).unwrap()
+        AnyPacket::decode(&mut Cursor::new(buff)).unwrap()
     }
 }

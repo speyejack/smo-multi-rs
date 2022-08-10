@@ -2,7 +2,7 @@ use crate::{
     client::{ClientMap, SyncClient},
     cmds::{Command, ServerCommand},
     guid::Guid,
-    net::{connection, ConnectionType, Packet, PacketData},
+    net::{connection, AnyPacket, AnyPacketData, ConnectionType},
     settings::SyncSettings,
     types::{ClientInitError, Result, SMOError},
 };
@@ -52,17 +52,17 @@ impl Coordinator {
             },
             Command::Packet(packet) => {
                 match &packet.data {
-                    PacketData::Costume(_) => {
+                    AnyPacketData::Costume(_) => {
                         self.sync_all_shines().await?;
                     }
-                    PacketData::Shine { shine_id, .. } => {
+                    AnyPacketData::Shine { shine_id, .. } => {
                         self.shine_bag.write().await.insert(*shine_id);
                         tracing::info!("Got moon {shine_id}");
                         self.sync_all_shines().await?;
 
                         return Ok(true);
                     }
-                    PacketData::Game {
+                    AnyPacketData::Game {
                         is_2d: _,
                         scenario_num,
                         stage,
@@ -125,7 +125,7 @@ impl Coordinator {
         };
 
         let (connection_type, client_name) = match &packet.data {
-            PacketData::Connect {
+            AnyPacketData::Connect {
                 c_type,
                 client_name,
                 ..
@@ -190,7 +190,7 @@ impl Coordinator {
         Ok(())
     }
 
-    async fn setup_player(&mut self, comm: mpsc::Sender<Command>, packet: Packet) -> Result<()> {
+    async fn setup_player(&mut self, comm: mpsc::Sender<Command>, packet: AnyPacket) -> Result<()> {
         tracing::debug!(
             "Setting up player ({}) with {} other players",
             packet.header.id,
@@ -204,9 +204,9 @@ impl Coordinator {
         for (other_id, other_cli) in self.clients.iter() {
             let other_cli = other_cli.read().await;
 
-            let connect_packet = Packet::new(
+            let connect_packet = AnyPacket::new(
                 *other_id,
-                PacketData::Connect {
+                AnyPacketData::Connect {
                     c_type: ConnectionType::FirstConnection,
                     max_player,
                     client_name: other_cli.name.clone(),
@@ -214,7 +214,7 @@ impl Coordinator {
             );
 
             let costume_packet =
-                Packet::new(*other_id, PacketData::Costume(other_cli.costume.clone()));
+                AnyPacket::new(*other_id, AnyPacketData::Costume(other_cli.costume.clone()));
 
             let last_game_packet = other_cli.last_game_packet.clone();
 
@@ -235,7 +235,7 @@ impl Coordinator {
         tracing::info!("Disconnecting player {}", guid);
         self.clients.remove(&guid);
         if let Some(comm) = self.to_clients.remove(&guid) {
-            let packet = Packet::new(guid, PacketData::Disconnect);
+            let packet = AnyPacket::new(guid, AnyPacketData::Disconnect);
             self.broadcast(packet.clone()).await?;
             let disconnect = Command::Packet(packet);
             comm.send(disconnect).await?;
@@ -259,7 +259,7 @@ impl Coordinator {
         Ok(())
     }
 
-    async fn broadcast(&mut self, mut p: Packet) -> Result<()> {
+    async fn broadcast(&mut self, mut p: AnyPacket) -> Result<()> {
         p.resize();
         for cli in &mut self.to_clients.values() {
             cli.send(Command::Packet(p.clone())).await?;
@@ -291,9 +291,9 @@ async fn client_sync_shines(
 
     for shine_id in mismatch {
         to_client
-            .send(Command::Packet(Packet::new(
+            .send(Command::Packet(AnyPacket::new(
                 *guid,
-                PacketData::Shine {
+                AnyPacketData::Shine {
                     shine_id: *shine_id,
                     is_grand: false,
                 },

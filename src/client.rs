@@ -3,8 +3,8 @@ use crate::cmds::ServerCommand;
 use crate::guid::Guid;
 use crate::net::connection;
 use crate::net::connection::Connection;
-use crate::net::Packet;
-use crate::net::PacketData;
+use crate::net::AnyPacket;
+use crate::net::AnyPacketData;
 use crate::settings::SyncSettings;
 use crate::types::ClientInitError;
 use crate::types::{Costume, SMOError};
@@ -41,7 +41,7 @@ pub struct ClientData {
     pub scenario: u8,
     pub is_2d: bool,
     pub is_seeking: bool,
-    pub last_game_packet: Option<Packet>,
+    pub last_game_packet: Option<AnyPacket>,
     pub speedrun: bool,
     pub loaded_save: bool,
     pub time: Duration,
@@ -57,7 +57,7 @@ enum Origin {
 
 #[derive(Debug)]
 enum ClientEvent {
-    Packet(Packet),
+    Packet(AnyPacket),
     Command(Command),
 }
 
@@ -110,10 +110,10 @@ impl Client {
         Ok(())
     }
 
-    async fn handle_packet(&mut self, packet: Packet) -> Result<()> {
+    async fn handle_packet(&mut self, packet: AnyPacket) -> Result<()> {
         tracing::debug!("Handling packet: {}", &packet.data.get_type_name());
         let send_to_coord = match &packet.data {
-            PacketData::Costume(costume) => {
+            AnyPacketData::Costume(costume) => {
                 // TODO: Figure out why shine sync code in original
                 // code base for costume packet
                 let mut data = self.data.write().await;
@@ -121,7 +121,7 @@ impl Client {
                 data.loaded_save = true;
                 true
             }
-            PacketData::Game {
+            AnyPacketData::Game {
                 is_2d,
                 scenario_num,
                 stage,
@@ -137,7 +137,7 @@ impl Client {
 
                 true
             }
-            PacketData::Tag {
+            AnyPacketData::Tag {
                 update_type,
                 is_it,
                 seconds,
@@ -154,7 +154,7 @@ impl Client {
                 }
                 true
             }
-            PacketData::Shine { shine_id, .. } => {
+            AnyPacketData::Shine { shine_id, .. } => {
                 let mut data = self.data.write().await;
                 if data.loaded_save {
                     data.shine_sync.insert(*shine_id);
@@ -171,11 +171,11 @@ impl Client {
         Ok(())
     }
 
-    pub async fn recv_packet(&mut self) -> Result<Packet> {
+    pub async fn recv_packet(&mut self) -> Result<AnyPacket> {
         self.conn.read_packet().await
     }
 
-    fn parse_packet(&mut self) -> Result<Packet> {
+    fn parse_packet(&mut self) -> Result<AnyPacket> {
         match self.conn.parse_packet() {
             Err(e) => Err(e),
             Ok(Some(t)) => Ok(t),
@@ -187,7 +187,7 @@ impl Client {
         match command {
             Command::Packet(p) => {
                 if p.header.id == self.guid {
-                    if let crate::net::PacketData::Disconnect = p.data {
+                    if let crate::net::AnyPacketData::Disconnect = p.data {
                         self.alive = false;
                     }
                 } else {
@@ -199,7 +199,7 @@ impl Client {
         Ok(())
     }
 
-    pub async fn send_packet(&mut self, packet: &Packet) -> Result<()> {
+    pub async fn send_packet(&mut self, packet: &AnyPacket) -> Result<()> {
         // TODO Handle disconnect packets
         if packet.header.id != self.guid {
             tracing::debug!(
@@ -227,9 +227,9 @@ impl Client {
 
         tracing::debug!("Initializing connection");
         let mut conn = Connection::new(socket);
-        conn.write_packet(&Packet::new(
+        conn.write_packet(&AnyPacket::new(
             Guid::default(),
-            PacketData::Init { max_players },
+            AnyPacketData::Init { max_players },
         ))
         .await?;
 
@@ -237,7 +237,7 @@ impl Client {
         let connect = conn.read_packet().await?;
 
         let new_player = match connect.data {
-            PacketData::Connect {
+            AnyPacketData::Connect {
                 client_name: ref name,
                 ..
             } => {

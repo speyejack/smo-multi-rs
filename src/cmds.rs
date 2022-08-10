@@ -1,7 +1,7 @@
 use crate::{
     client::Client,
     guid::Guid,
-    net::{ConnectionType, Packet},
+    net::{AnyPacket, ConnectionType},
 };
 use std::{convert::Infallible, str::FromStr};
 
@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 
 #[derive(Debug)]
 pub enum Command {
-    Packet(Packet),
+    Packet(AnyPacket),
     Cli(CliCommand),
     Server(ServerCommand),
 }
@@ -19,7 +19,7 @@ pub enum Command {
 pub enum ServerCommand {
     NewPlayer {
         cli: Client,
-        connect_packet: Box<Packet>,
+        connect_packet: Box<AnyPacket>,
         comm: mpsc::Sender<Command>,
     },
     DisconnectPlayer {
