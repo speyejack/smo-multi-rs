@@ -20,7 +20,6 @@ use tracing::info;
 use tracing::info_span;
 use tracing::instrument;
 
-pub type ClientMap = HashMap<Guid, SyncPlayer>;
 pub type SyncPlayer = Arc<RwLock<PlayerData>>;
 
 #[derive(Debug)]

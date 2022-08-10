@@ -1,5 +1,5 @@
 use crate::{
-    client::{ClientMap, SyncPlayer},
+    client::SyncPlayer,
     cmds::{Command, ServerCommand},
     guid::Guid,
     net::{connection, ConnectionType, Packet, PacketData},
@@ -19,8 +19,7 @@ type SyncShineBag = Arc<RwLock<HashSet<i32>>>;
 pub struct Coordinator {
     pub shine_bag: SyncShineBag,
     pub settings: SyncSettings,
-    pub clients: ClientMap,
-    pub to_clients: HashMap<Guid, mpsc::Sender<Command>>,
+    pub clients: HashMap<Guid, (mpsc::Sender<Command>, SyncPlayer)>,
     pub from_clients: mpsc::Receiver<Command>,
 }
 
@@ -104,11 +103,17 @@ impl Coordinator {
     }
 
     fn get_client(&self, id: &Guid) -> std::result::Result<&SyncPlayer, SMOError> {
-        self.clients.get(id).ok_or(SMOError::InvalidID(*id))
+        self.clients
+            .get(id)
+            .map(|x| &x.1)
+            .ok_or(SMOError::InvalidID(*id))
     }
 
     fn get_channel(&self, id: &Guid) -> std::result::Result<&mpsc::Sender<Command>, SMOError> {
-        self.to_clients.get(id).ok_or(SMOError::InvalidID(*id))
+        self.clients
+            .get(id)
+            .map(|x| &x.0)
+            .ok_or(SMOError::InvalidID(*id))
     }
 
     async fn add_client(&mut self, cmd: ServerCommand) -> Result<()> {
@@ -159,20 +164,18 @@ impl Coordinator {
         }
 
         let id = cli.guid;
-        match connection_type {
-            ConnectionType::FirstConnection => {
-                self.clients.insert(id, cli.player.clone());
-            }
-            ConnectionType::Reconnecting => match self.clients.get(&id) {
-                Some(prev_data) => {
+
+        let data = match connection_type {
+            ConnectionType::FirstConnection => cli.player.clone(),
+            ConnectionType::Reconnecting => match self.clients.remove(&id) {
+                Some((_, prev_data)) => {
                     cli.player = prev_data.clone();
+                    prev_data
                 }
-                None => {
-                    self.clients.insert(id, cli.player.clone());
-                }
+                None => cli.player.clone(),
             },
-        }
-        self.to_clients.insert(id, comm.clone());
+        };
+        self.clients.insert(id, (comm.clone(), data));
 
         let name = cli.display_name.clone();
         tracing::info!("New client connected: {} ({})", &name, cli.guid);
@@ -198,7 +201,7 @@ impl Coordinator {
 
         drop(settings);
         // Sync connection, costumes, and last game packet
-        for (other_id, other_cli) in self.clients.iter() {
+        for (other_id, (_, other_cli)) in self.clients.iter() {
             let other_cli = other_cli.read().await;
 
             let connect_packet = Packet::new(
@@ -230,8 +233,7 @@ impl Coordinator {
 
     async fn disconnect_player(&mut self, guid: Guid) -> Result<()> {
         tracing::info!("Disconnecting player {}", guid);
-        self.clients.remove(&guid);
-        if let Some(comm) = self.to_clients.remove(&guid) {
+        if let Some((comm, _)) = self.clients.remove(&guid) {
             let packet = Packet::new(guid, PacketData::Disconnect);
             self.broadcast(packet.clone()).await?;
             let disconnect = Command::Packet(packet);
@@ -242,14 +244,13 @@ impl Coordinator {
     }
 
     async fn sync_all_shines(&mut self) -> Result<()> {
-        for (guid, client) in &self.clients {
-            let channel = self.to_clients.get(guid).unwrap();
+        for (guid, (channel, player)) in &self.clients {
             let sender_guid = Guid::default();
             client_sync_shines(
                 channel.clone(),
                 self.shine_bag.clone(),
                 &sender_guid,
-                client,
+                player,
             )
             .await?;
         }
@@ -258,14 +259,14 @@ impl Coordinator {
 
     async fn broadcast(&mut self, mut p: Packet) -> Result<()> {
         p.resize();
-        for cli in &mut self.to_clients.values() {
+        for (cli, _) in &mut self.clients.values() {
             cli.send(Command::Packet(p.clone())).await?;
         }
         Ok(())
     }
 
     async fn shutdown(mut self) {
-        let active_clients = self.to_clients.clone();
+        let active_clients = self.clients.clone();
         for guid in active_clients.keys() {
             let _ = self.disconnect_player(*guid).await;
         }
@@ -276,9 +277,9 @@ async fn client_sync_shines(
     to_client: mpsc::Sender<Command>,
     shine_bag: SyncShineBag,
     guid: &Guid,
-    client: &SyncPlayer,
+    player: &SyncPlayer,
 ) -> Result<()> {
-    let client = client.read().await;
+    let client = player.read().await;
     if !client.speedrun {
         return Ok(());
     }

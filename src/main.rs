@@ -10,7 +10,6 @@ mod types;
 use crate::types::Result;
 
 use clap::Parser;
-use client::ClientMap;
 use cmds::{Cli, Command};
 use coordinator::Coordinator;
 
@@ -69,8 +68,7 @@ fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
         shine_bag: Arc::new(RwLock::new(HashSet::default())),
         from_clients,
         settings,
-        clients: ClientMap::new(),
-        to_clients: HashMap::new(),
+        clients: HashMap::new(),
     };
     (to_coord, server, coordinator)
 }
