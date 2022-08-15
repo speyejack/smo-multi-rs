@@ -20,6 +20,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::File,
     io::{BufReader, BufWriter, Write},
+    net::SocketAddr,
     sync::Arc,
 };
 use tokio::{
@@ -32,8 +33,12 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing::info!("Starting server");
-    let bind_addr = "0.0.0.0:1027".parse().unwrap();
     let (_to_coord, server, coordinator) = create_default_server();
+    let settings = server.settings.read().await;
+    let bind_addr = SocketAddr::new(settings.server.address, settings.server.port);
+    tracing::info!("Binding tcp port to {}", bind_addr);
+
+    drop(settings);
     let serv_task = tokio::task::spawn(server.listen_for_clients(bind_addr));
     let coord_task = tokio::task::spawn(coordinator.handle_commands());
     // let parser_task = tokio::task::spawn(parse_commands(to_coord));
