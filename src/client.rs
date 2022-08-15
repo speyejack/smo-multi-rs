@@ -251,15 +251,19 @@ impl Client {
         .await?;
 
         let udp = UdpSocket::bind("0.0.0.0:0").await?;
-        let udp_port = udp.local_addr().expect("Failed to unwrap udp port").port();
+        let udp_addr = udp.local_addr().expect("Failed to unwrap udp port");
+        tracing::debug!("Binding udp to: {:?}", udp_addr);
         conn.write_packet(&Packet::new(
             Guid::default(),
-            PacketData::UdpInit { port: udp_port },
+            PacketData::UdpInit {
+                port: udp_addr.port(),
+            },
         ))
         .await?;
 
         tracing::debug!("setting new udp connection");
-        let mut udp_conn = UdpConnection::new(udp, SocketAddr::new(tcp_sock_addr.ip(), 55446));
+        let udp_addr = SocketAddr::new(tcp_sock_addr.ip(), 55446);
+        let mut udp_conn = UdpConnection::new(udp, udp_addr);
 
         tracing::debug!("Waiting for reply");
         let new_player = loop {
@@ -267,10 +271,9 @@ impl Client {
 
             let new_player = match connect.data {
                 PacketData::UdpInit { port } => {
-                    udp_conn = UdpConnection::new(
-                        udp_conn.socket,
-                        SocketAddr::new(tcp_sock_addr.ip(), port),
-                    );
+                    let udp_addr = SocketAddr::new(tcp_sock_addr.ip(), port);
+                    tracing::debug!("Connecting to new udp: {:?}", udp_addr);
+                    udp_conn = UdpConnection::new(udp_conn.socket, udp_addr);
                 }
                 PacketData::Connect {
                     client_name: ref name,

@@ -124,34 +124,33 @@ async fn proxy_client(
 ) -> Result<()> {
     let server_conn = tokio::net::TcpSocket::new_v4()?;
     let addr = to_addrs.0;
-    let udp_addr = to_addrs.1;
+    let serv_udp_addr = to_addrs.1;
     let plex = to_addrs.2;
     let serv_sock = server_conn.connect(addr).await?;
-    // udp_sock.connect(udp_addr).await.unwrap();
+    let serv_tcp_addr = serv_sock.peer_addr().expect("Couldn't get tcp peer addr");
+    let serv_udp_addr = SocketAddr::new(serv_tcp_addr.ip(), serv_udp_addr.port());
 
-    tracing::info!("Binding: {}", udp_addr_loc);
     let udp = UdpSocket::bind(udp_addr_loc).await.unwrap();
-    let udp_port = udp
-        .local_addr()
-        .expect("Couldn't get udp local port")
-        .port();
+    let loc_udp_addr = udp.local_addr().expect("Couldn't get udp local port");
+    let loc_udp_port = loc_udp_addr.port();
+    tracing::info!("Binding udp to: {}", loc_udp_addr);
 
     let mut cli = Connection::new(cli_sock);
     let mut serv = Connection::new(serv_sock);
-    let mut udp = UdpConnection::new(udp, udp_addr);
+    let mut udp = UdpConnection::new(udp, serv_udp_addr);
     let mut use_udp = true;
     let mut last_tag_packet = Instant::now();
 
     serv.write_packet(&Packet::new(
         Guid::default(),
-        PacketData::UdpInit { port: udp_port },
+        PacketData::UdpInit { port: loc_udp_port },
     ))
     .await?;
 
     tracing::info!("Client setup and ready");
     loop {
         let (origin, packet_result) = tokio::select! {
-            packet_r = udp.read_packet() => {tracing::debug!("Got udp!");(plex, packet_r)}
+            packet_r = udp.read_packet() => {tracing::info!("Got udp!");(plex, packet_r)}
             packet_r = cli.read_packet() => {(Origin::Client, packet_r)},
             packet_r = serv.read_packet() => {(Origin::Server, packet_r)},
         };
@@ -175,10 +174,9 @@ async fn proxy_client(
                 last_tag_packet = Instant::now();
             }
             PacketData::UdpInit { port } => {
-                udp = UdpConnection::new(udp.socket, SocketAddr::new(udp_addr.ip(), *port));
-            }
-            PacketData::Connect { .. } => {
-                tracing::info!("Got connect packet: {:?}", packet);
+                let addr = SocketAddr::new(serv_udp_addr.ip(), *port);
+                tracing::info!("New udp peer: {:?}", addr);
+                udp = UdpConnection::new(udp.socket, addr);
             }
             _ => {}
         }
