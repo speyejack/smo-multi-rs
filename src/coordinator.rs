@@ -191,7 +191,7 @@ impl Coordinator {
         tracing::debug!(
             "Setting up player ({}) with {} other players",
             packet.id,
-            self.clients.len()
+            self.clients.len() - 1,
         );
         let settings = self.settings.read().await;
         let max_player = settings.max_players;
