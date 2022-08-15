@@ -235,6 +235,7 @@ impl Client {
     pub async fn initialize_client(
         socket: TcpStream,
         to_coord: mpsc::Sender<Command>,
+        udp_port: u16,
         settings: SyncSettings,
     ) -> Result<()> {
         let (to_cli, from_server) = mpsc::channel(10);
@@ -252,7 +253,8 @@ impl Client {
         ))
         .await?;
 
-        let udp = UdpSocket::bind("0.0.0.0:0").await?;
+        let local_udp_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), udp_port);
+        let udp = UdpSocket::bind(local_udp_addr).await?;
         let local_udp_addr = udp.local_addr().expect("Failed to unwrap udp port");
         tracing::debug!("Binding udp to: {:?}", local_udp_addr);
 
