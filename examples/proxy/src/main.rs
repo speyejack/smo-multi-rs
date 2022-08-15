@@ -68,8 +68,6 @@ async fn main() -> Result<()> {
         let remote_addrs: RemoteAddrs = (
             serv_ip.parse().unwrap(),
             "127.0.0.1:55445".parse().unwrap(), // Junk address
-            // "127.0.0.1:61885".parse().unwrap(),
-            // "127.0.0.1:55445".parse().unwrap(),
             Origin::Server,
         );
         (tracing::info_span!("proxy"), local_bind, remote_addrs)
@@ -133,7 +131,7 @@ async fn proxy_client(
     let udp = UdpSocket::bind(udp_addr_loc).await.unwrap();
     let loc_udp_addr = udp.local_addr().expect("Couldn't get udp local port");
     let loc_udp_port = loc_udp_addr.port();
-    tracing::info!("Binding udp to: {}", loc_udp_addr);
+    tracing::debug!("Binding udp to: {}", loc_udp_addr);
 
     let mut cli = Connection::new(cli_sock);
     let mut serv = Connection::new(serv_sock);
@@ -150,7 +148,7 @@ async fn proxy_client(
     tracing::info!("Client setup and ready");
     loop {
         let (origin, packet_result) = tokio::select! {
-            packet_r = udp.read_packet() => {tracing::info!("Got udp!");(plex, packet_r)}
+            packet_r = udp.read_packet() => {tracing::debug!("Got udp!");(plex, packet_r)}
             packet_r = cli.read_packet() => {(Origin::Client, packet_r)},
             packet_r = serv.read_packet() => {(Origin::Server, packet_r)},
         };
@@ -175,7 +173,7 @@ async fn proxy_client(
             }
             PacketData::UdpInit { port } => {
                 let addr = SocketAddr::new(serv_udp_addr.ip(), *port);
-                tracing::info!("New udp peer: {:?}", addr);
+                tracing::debug!("New udp peer: {:?}", addr);
                 udp = UdpConnection::new(udp.socket, addr);
             }
             _ => {}

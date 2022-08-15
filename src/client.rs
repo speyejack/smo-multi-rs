@@ -309,6 +309,7 @@ impl Client {
                 _ => break Err(SMOError::ClientInit(ClientInitError::BadHandshake)),
             };
         }?;
+        tracing::debug!("Initialized player");
 
         to_coord.send(new_player).await?;
         Ok(())
