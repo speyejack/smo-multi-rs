@@ -30,12 +30,14 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let bind_addr = "0.0.0.0:61888".parse().unwrap();
+    tracing::info!("Starting server");
+    let bind_addr = "0.0.0.0:1027".parse().unwrap();
     let (_to_coord, server, coordinator) = create_default_server();
     let serv_task = tokio::task::spawn(server.listen_for_clients(bind_addr));
     let coord_task = tokio::task::spawn(coordinator.handle_commands());
     // let parser_task = tokio::task::spawn(parse_commands(to_coord));
 
+    tracing::info!("Server ready");
     // let _results = tokio::join!(serv_task, coord_task, parser_task);
     let _results = tokio::join!(serv_task, coord_task);
     Ok(())
