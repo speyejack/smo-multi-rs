@@ -58,7 +58,6 @@ async fn main() -> Result<()> {
         (tracing::info_span!("server"), local_bind, remote_addrs)
     } else if proxy_type == "udp" {
         // Client side
-        tracing::info!("Udp proxy started");
         let serv_ip = std::env::args().nth(2).unwrap();
         let local_bind: LocalAddrs = (
             "0.0.0.0:1027".parse().unwrap(), // TCP
@@ -70,6 +69,7 @@ async fn main() -> Result<()> {
             "127.0.0.1:55445".parse().unwrap(), // Junk address
             Origin::Server,
         );
+        tracing::info!("Udp proxy started on {}", local_bind.0);
         (tracing::info_span!("proxy"), local_bind, remote_addrs)
     } else {
         panic!("Invalid frist parameter, you probably want 'proxy' followed by 'ip:port'")
@@ -175,6 +175,7 @@ async fn proxy_client(
                     PacketData::UdpInit { port: loc_udp_port },
                 ))
                 .await?;
+
                 continue;
             }
             _ => {}
