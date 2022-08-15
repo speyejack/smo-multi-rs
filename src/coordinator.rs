@@ -9,6 +9,7 @@ use crate::{
 
 use std::{
     collections::{HashMap, HashSet},
+    net::IpAddr,
     sync::Arc,
     time::Duration,
 };
@@ -133,9 +134,9 @@ impl Coordinator {
         // Verify client allowed to connect
         let can_connect = {
             let settings = self.settings.read().await;
-            let max_players: usize = settings.max_players.into();
-            let banned_players = &settings.banned_players;
-            let banned_ips = &settings.banned_ips;
+            let max_players: usize = settings.server.max_players.into();
+            let banned_players = &settings.ban_list.players;
+            let banned_ips = &settings.ban_list.ips;
 
             if max_players < self.clients.len() {
                 tracing::warn!(
@@ -194,7 +195,7 @@ impl Coordinator {
             self.clients.len() - 1,
         );
         let settings = self.settings.read().await;
-        let max_player = settings.max_players;
+        let max_player = settings.server.max_players;
 
         drop(settings);
         // Sync connection, costumes, and last game packet

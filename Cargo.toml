@@ -28,6 +28,7 @@ hex = "0.4.3"
 tracing = {version="0.1.36"}
 tracing-subscriber = {version="0.3.15", features=["std", "env-filter", "fmt"]}
 quickcheck = "1.0.3"
+serde_json = "1.0.83"
 
 [worksapce]
 members = [

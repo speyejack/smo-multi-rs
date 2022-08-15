@@ -26,6 +26,8 @@ pub enum SMOError {
     ThreadJoin(#[from] JoinError),
     #[error("Failed to initialize client: {0}")]
     ClientInit(#[from] ClientInitError),
+    #[error("Invalid error")]
+    JsonError(#[from] serde_json::Error),
 }
 
 #[derive(Error, Debug)]

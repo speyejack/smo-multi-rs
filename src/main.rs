@@ -18,7 +18,8 @@ use server::Server;
 use settings::{Settings, SyncSettings};
 use std::{
     collections::{HashMap, HashSet},
-    io::Write,
+    fs::File,
+    io::{BufReader, BufWriter, Write},
     sync::Arc,
 };
 use tokio::{
@@ -43,6 +44,22 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+fn read_settings() -> Result<Settings> {
+    let file = File::open("./settings.json")?;
+    let reader = BufReader::new(file);
+    let settings = serde_json::from_reader(reader)?;
+
+    Ok(settings)
+}
+
+fn save_settings(settings: &Settings) -> Result<()> {
+    tracing::debug!("Saving settings");
+    let file = File::create("./settings.json")?;
+    let writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, settings)?;
+    Ok(())
+}
+
 fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
     // TODO Remove tihs debug panic option
     let default_panic = std::panic::take_hook();
@@ -57,15 +74,15 @@ fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
 
     let (to_coord, from_clients) = mpsc::channel(100);
 
-    let settings = Settings {
-        max_players: 4,
-        ..Settings::default()
-    };
+    let settings = read_settings().unwrap_or_default();
+    save_settings(&settings).expect("Failed to save config");
+
     let settings = Arc::new(RwLock::new(settings));
 
     let server = Server {
         settings: settings.clone(),
         to_coord: to_coord.clone(),
+        udp_port: 51888,
     };
     let coordinator = Coordinator {
         shine_bag: Arc::new(RwLock::new(HashSet::default())),

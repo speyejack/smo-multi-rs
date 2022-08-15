@@ -11,6 +11,8 @@ use crate::types::ClientInitError;
 use crate::types::{Costume, SMOError};
 use crate::types::{EncodingError, Result};
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -242,7 +244,7 @@ impl Client {
         let tcp_sock_addr = socket.peer_addr().expect("Couldn't get tcp peer address");
 
         let l_set = settings.read().await;
-        let max_players = l_set.max_players;
+        let max_players = l_set.server.max_players;
         drop(l_set);
 
         tracing::debug!("Initializing connection");
