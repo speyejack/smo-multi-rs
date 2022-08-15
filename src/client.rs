@@ -3,6 +3,7 @@ use crate::cmds::ServerCommand;
 use crate::guid::Guid;
 use crate::net::connection;
 use crate::net::connection::Connection;
+use crate::net::udp_conn::UdpConnection;
 use crate::net::Packet;
 use crate::net::PacketData;
 use crate::settings::SyncSettings;
@@ -10,10 +11,12 @@ use crate::types::ClientInitError;
 use crate::types::{Costume, SMOError};
 use crate::types::{EncodingError, Result};
 use std::collections::{HashMap, HashSet};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
+use tokio::net::UdpSocket;
 use tokio::select;
 use tokio::sync::{mpsc, RwLock};
 use tracing::info;
@@ -30,6 +33,7 @@ pub struct Client {
     pub guid: Guid,
     pub alive: bool,
     pub conn: Connection,
+    pub udp_conn: UdpConnection,
     pub to_coord: mpsc::Sender<Command>,
     pub from_server: mpsc::Receiver<Command>,
 }
@@ -93,6 +97,10 @@ impl Client {
         let event = select! {
             packet = self.conn.read_packet() => {
                 (Origin::External, ClientEvent::Packet(packet?))
+            },
+            udp_packet = self.udp_conn.read_packet() => {
+                tracing::debug!("Got udp event!");
+                (Origin::External, ClientEvent::Packet(udp_packet?))
             },
             command = self.from_server.recv() => (Origin::Internal, ClientEvent::Command(command.ok_or(SMOError::RecvChannel)?)),
         };
@@ -161,6 +169,11 @@ impl Client {
                 }
                 true
             }
+            PacketData::UdpInit { port } => {
+                let ip = self.udp_conn.send_addr.ip();
+                self.udp_conn.send_addr = SocketAddr::new(ip, *port);
+                false
+            }
             _ => true,
         };
 
@@ -208,7 +221,10 @@ impl Client {
                 packet.data.get_type_name()
             );
 
-            self.conn.write_packet(packet).await
+            match packet.data {
+                PacketData::Player { .. } => self.udp_conn.write_packet(packet).await,
+                _ => self.conn.write_packet(packet).await,
+            }
         } else {
             Ok(())
         }
@@ -220,6 +236,7 @@ impl Client {
         settings: SyncSettings,
     ) -> Result<()> {
         let (to_cli, from_server) = mpsc::channel(10);
+        let tcp_sock_addr = socket.peer_addr().expect("Couldn't get tcp peer address");
 
         let l_set = settings.read().await;
         let max_players = l_set.max_players;
@@ -233,41 +250,61 @@ impl Client {
         ))
         .await?;
 
+        let udp = UdpSocket::bind("0.0.0.0:0").await?;
+        let udp_port = udp.local_addr().expect("Failed to unwrap udp port").port();
+        conn.write_packet(&Packet::new(
+            Guid::default(),
+            PacketData::UdpInit { port: udp_port },
+        ))
+        .await?;
+
+        tracing::debug!("setting new udp connection");
+        let mut udp_conn = UdpConnection::new(udp, SocketAddr::new(tcp_sock_addr.ip(), 55446));
+
         tracing::debug!("Waiting for reply");
-        let connect = conn.read_packet().await?;
+        let new_player = loop {
+            let connect = conn.read_packet().await?;
 
-        let new_player = match connect.data {
-            PacketData::Connect {
-                client_name: ref name,
-                ..
-            } => {
-                let data = ClientData {
-                    settings,
-                    name: name.clone(),
-                    ..ClientData::default()
-                };
+            let new_player = match connect.data {
+                PacketData::UdpInit { port } => {
+                    udp_conn = UdpConnection::new(
+                        udp_conn.socket,
+                        SocketAddr::new(tcp_sock_addr.ip(), port),
+                    );
+                }
+                PacketData::Connect {
+                    client_name: ref name,
+                    ..
+                } => {
+                    let data = ClientData {
+                        settings,
+                        name: name.clone(),
+                        ..ClientData::default()
+                    };
 
-                let data = Arc::new(RwLock::new(data));
+                    let data = Arc::new(RwLock::new(data));
 
-                let to_coord = to_coord.clone();
-                tracing::debug!("Created client data");
-                let client = Client {
-                    display_name: name.trim_matches(char::from(0)).to_string(),
-                    data,
-                    guid: connect.id,
-                    alive: true,
-                    to_coord,
-                    from_server,
-                    conn,
-                };
+                    let to_coord = to_coord.clone();
+                    tracing::debug!("Created client data");
+                    let client = Client {
+                        display_name: name.trim_matches(char::from(0)).to_string(),
+                        data,
+                        guid: connect.id,
+                        alive: true,
+                        to_coord,
+                        from_server,
+                        conn,
+                        udp_conn,
+                    };
 
-                Ok(Command::Server(ServerCommand::NewPlayer {
-                    cli: client,
-                    connect_packet: Box::new(connect),
-                    comm: to_cli,
-                }))
-            }
-            _ => Err(SMOError::ClientInit(ClientInitError::BadHandshake)),
+                    break Ok(Command::Server(ServerCommand::NewPlayer {
+                        cli: client,
+                        connect_packet: Box::new(connect),
+                        comm: to_cli,
+                    }));
+                }
+                _ => break Err(SMOError::ClientInit(ClientInitError::BadHandshake)),
+            };
         }?;
 
         to_coord.send(new_player).await?;

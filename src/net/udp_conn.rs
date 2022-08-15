@@ -6,7 +6,7 @@ use tokio::{
     net::{TcpStream, UdpSocket},
 };
 
-use smoo::{
+use crate::{
     net::{encoding::Decodable, encoding::Encodable, Packet, MAX_PACKET_SIZE},
     types::{EncodingError, Result},
 };

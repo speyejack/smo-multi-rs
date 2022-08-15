@@ -120,6 +120,9 @@ pub enum PacketData {
         sub_scenario: u8,
     },
     Command,
+    UdpInit {
+        port: u16,
+    },
 }
 
 impl PacketData {
@@ -138,6 +141,7 @@ impl PacketData {
             Self::Capture { .. } => COSTUME_NAME_SIZE,
             Self::ChangeStage { .. } => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
             Self::Command { .. } => 0,
+            Self::UdpInit { .. } => 2,
         }
     }
 
@@ -156,6 +160,7 @@ impl PacketData {
             Self::Capture { .. } => 10,
             Self::ChangeStage { .. } => 11,
             Self::Command { .. } => 12,
+            Self::UdpInit { .. } => 13,
         }
     }
 
@@ -174,6 +179,7 @@ impl PacketData {
             Self::Capture { .. } => "capture",
             Self::ChangeStage { .. } => "changeStage",
             Self::Command { .. } => "command",
+            Self::UdpInit { .. } => "udpInit",
         }
         .to_string()
     }
@@ -292,6 +298,9 @@ where
                 sub_scenario: buf.get_u8(),
             },
             12 => PacketData::Command {},
+            13 => PacketData::UdpInit {
+                port: buf.get_u16_le(),
+            },
             _ => PacketData::Unhandled {
                 tag: p_type,
                 data: buf.copy_to_bytes(p_size.into())[..].to_vec(),
@@ -418,7 +427,21 @@ where
                 buf.put_i8(*scenerio);
                 buf.put_u8(*sub_scenario);
             }
+            PacketData::ChangeStage {
+                stage,
+                id,
+                scenerio,
+                sub_scenario,
+            } => {
+                buf.put_slice(&str_to_sized_array::<STAGE_CHANGE_NAME_SIZE>(stage));
+                buf.put_slice(&str_to_sized_array::<STAGE_ID_SIZE>(id));
+                buf.put_i8(*scenerio);
+                buf.put_u8(*sub_scenario);
+            }
             PacketData::Command => {}
+            PacketData::UdpInit { port } => {
+                buf.put_u16_le(*port);
+            }
         }
 
         Ok(())
@@ -441,7 +464,7 @@ fn buf_size_to_string(buf: &mut impl Buf, size: usize) -> Result<String> {
 
 impl Arbitrary for Packet {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        let options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        let options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
         let mut buff = BytesMut::with_capacity(MAX_PACKET_SIZE);
 
         let enum_num = g.choose(&options).unwrap();
@@ -458,6 +481,7 @@ impl Arbitrary for Packet {
             10 => COSTUME_NAME_SIZE,
             11 => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
             12 => 0,
+            13 => 2,
             _ => 0,
         };
 

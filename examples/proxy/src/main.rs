@@ -1,7 +1,7 @@
-mod udp_conn;
-
 use bytes::BytesMut;
+use smoo::guid::Guid;
 use smoo::net::connection::Connection;
+use smoo::net::udp_conn::UdpConnection;
 use smoo::net::{encoding::Encodable, Packet, PacketData};
 use smoo::types::Result;
 use std::ops::Not;
@@ -12,7 +12,6 @@ use tokio::net::UdpSocket;
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tracing::Instrument;
 use tracing_subscriber::EnvFilter;
-use udp_conn::UdpConnection;
 
 type LocalAddrs = (SocketAddr, SocketAddr);
 type RemoteAddrs = (SocketAddr, SocketAddr, Origin);
@@ -26,8 +25,8 @@ async fn main() -> Result<()> {
     tracing::debug!("Starting");
 
     let mut args = std::env::args();
-    let is_client = args.nth(1).unwrap() == "client";
-    let (span, local_bind, remote_addrs) = if is_client {
+    let proxy_type = args.nth(1).unwrap();
+    let (span, local_bind, remote_addrs) = if proxy_type == "client" {
         // Client side
         tracing::info!("Client side proxy");
         let local_bind: LocalAddrs = (
@@ -42,7 +41,7 @@ async fn main() -> Result<()> {
             Origin::Server,
         );
         (tracing::info_span!("client"), local_bind, remote_addrs)
-    } else {
+    } else if proxy_type == "server" {
         // Server side
         tracing::info!("Server side proxy");
         let local_bind: LocalAddrs = (
@@ -57,6 +56,25 @@ async fn main() -> Result<()> {
             Origin::Client,
         );
         (tracing::info_span!("server"), local_bind, remote_addrs)
+    } else if proxy_type == "udp" {
+        // Client side
+        tracing::info!("Udp proxy started");
+        let serv_ip = std::env::args().nth(2).unwrap();
+        let local_bind: LocalAddrs = (
+            "0.0.0.0:1027".parse().unwrap(), // TCP
+            "0.0.0.0:0".parse().unwrap(),    // UDP
+        );
+
+        let remote_addrs: RemoteAddrs = (
+            serv_ip.parse().unwrap(),
+            "127.0.0.1:55445".parse().unwrap(), // Junk address
+            // "127.0.0.1:61885".parse().unwrap(),
+            // "127.0.0.1:55445".parse().unwrap(),
+            Origin::Server,
+        );
+        (tracing::info_span!("proxy"), local_bind, remote_addrs)
+    } else {
+        panic!("Invalid frist parameter, you probably want 'proxy' followed by 'ip:port'")
     };
     let _span = span.enter();
 
@@ -65,14 +83,13 @@ async fn main() -> Result<()> {
 
     loop {
         let (from_socket, addr) = listener.accept().await?;
-        let udp = UdpSocket::bind(local_bind.1).await.unwrap();
         tracing::info!("new client connection: {}", addr);
         let span = tracing::info_span!("cli", addr = addr.ip().to_string());
 
         let remote_addrs = remote_addrs.clone();
         tokio::spawn(
             async move {
-                let result = proxy_client(from_socket, udp, remote_addrs).await;
+                let result = proxy_client(from_socket, local_bind.1, remote_addrs).await;
                 if let Err(e) = result {
                     tracing::warn!("Client error: {e}");
                 }
@@ -102,7 +119,7 @@ impl Not for Origin {
 
 async fn proxy_client(
     cli_sock: TcpStream,
-    udp_sock: UdpSocket,
+    udp_addr_loc: SocketAddr,
     to_addrs: RemoteAddrs,
 ) -> Result<()> {
     let server_conn = tokio::net::TcpSocket::new_v4()?;
@@ -112,16 +129,29 @@ async fn proxy_client(
     let serv_sock = server_conn.connect(addr).await?;
     // udp_sock.connect(udp_addr).await.unwrap();
 
+    tracing::info!("Binding: {}", udp_addr_loc);
+    let udp = UdpSocket::bind(udp_addr_loc).await.unwrap();
+    let udp_port = udp
+        .local_addr()
+        .expect("Couldn't get udp local port")
+        .port();
+
     let mut cli = Connection::new(cli_sock);
     let mut serv = Connection::new(serv_sock);
-    let mut udp = UdpConnection::new(udp_sock, udp_addr);
+    let mut udp = UdpConnection::new(udp, udp_addr);
     let mut use_udp = true;
     let mut last_tag_packet = Instant::now();
+
+    serv.write_packet(&Packet::new(
+        Guid::default(),
+        PacketData::UdpInit { port: udp_port },
+    ))
+    .await?;
 
     tracing::info!("Client setup and ready");
     loop {
         let (origin, packet_result) = tokio::select! {
-            packet_r = udp.read_packet() => {(plex, packet_r)}
+            packet_r = udp.read_packet() => {tracing::debug!("Got udp!");(plex, packet_r)}
             packet_r = cli.read_packet() => {(Origin::Client, packet_r)},
             packet_r = serv.read_packet() => {(Origin::Server, packet_r)},
         };
@@ -136,17 +166,22 @@ async fn proxy_client(
         };
 
         tracing::debug!("got packet: {}", packet.data.get_type_name());
-        if let &Packet {
-            data: PacketData::Tag { .. },
-            ..
-        } = &packet
-        {
-            if last_tag_packet.elapsed().as_millis() < 1000 {
-                use_udp = !use_udp;
-                tracing::info!("Using udp: {}", use_udp);
+        match &packet.data {
+            PacketData::Tag { .. } => {
+                if last_tag_packet.elapsed().as_millis() < 1000 {
+                    use_udp = !use_udp;
+                    tracing::info!("Using udp: {}", use_udp);
+                }
+                last_tag_packet = Instant::now();
             }
-            last_tag_packet = Instant::now();
-        };
+            PacketData::UdpInit { port } => {
+                udp = UdpConnection::new(udp.socket, SocketAddr::new(udp_addr.ip(), *port));
+            }
+            PacketData::Connect { .. } => {
+                tracing::info!("Got connect packet: {:?}", packet);
+            }
+            _ => {}
+        }
 
         if use_udp && origin != plex {
             if let &Packet {
@@ -154,6 +189,7 @@ async fn proxy_client(
                 ..
             } = &packet
             {
+                tracing::debug!("Sending over udp!");
                 udp.write_packet(&packet).await.unwrap();
                 continue;
             }
