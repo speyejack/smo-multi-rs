@@ -1,4 +1,4 @@
-FROM rust:1.61 AS builder
+FROM rust:1.63 AS builder
 COPY . .
 RUN cargo build --release --bin smo-rs
 

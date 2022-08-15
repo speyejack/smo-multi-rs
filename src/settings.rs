@@ -36,10 +36,9 @@ pub struct FlipSettings {
     pub pov: FlipPovSettings,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum FlipPovSettings {
-    #[default]
     Both,
     Player,
     Others,
@@ -128,5 +127,11 @@ impl Default for PersistShine {
             enabled: false,
             filename: "./moons.json".into(),
         }
+    }
+}
+
+impl Default for FlipPovSettings {
+    fn default() -> Self {
+        Self::Both
     }
 }
