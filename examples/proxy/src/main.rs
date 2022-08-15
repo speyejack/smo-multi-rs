@@ -139,16 +139,10 @@ async fn proxy_client(
     let mut use_udp = true;
     let mut last_tag_packet = Instant::now();
 
-    serv.write_packet(&Packet::new(
-        Guid::default(),
-        PacketData::UdpInit { port: loc_udp_port },
-    ))
-    .await?;
-
     tracing::info!("Client setup and ready");
     loop {
         let (origin, packet_result) = tokio::select! {
-            packet_r = udp.read_packet() => {tracing::debug!("Got udp!");(plex, packet_r)}
+            packet_r = udp.read_packet() => {tracing::trace!("Got udp!");(plex, packet_r)}
             packet_r = cli.read_packet() => {(Origin::Client, packet_r)},
             packet_r = serv.read_packet() => {(Origin::Server, packet_r)},
         };
@@ -175,6 +169,13 @@ async fn proxy_client(
                 let addr = SocketAddr::new(serv_udp_addr.ip(), *port);
                 tracing::debug!("New udp peer: {:?}", addr);
                 udp = UdpConnection::new(udp.socket, addr);
+
+                serv.write_packet(&Packet::new(
+                    Guid::default(),
+                    PacketData::UdpInit { port: loc_udp_port },
+                ))
+                .await?;
+                continue;
             }
             _ => {}
         }
@@ -185,7 +186,7 @@ async fn proxy_client(
                 ..
             } = &packet
             {
-                tracing::debug!("Sending over udp!");
+                tracing::trace!("Sending over udp!");
                 udp.write_packet(&packet).await.unwrap();
                 continue;
             }

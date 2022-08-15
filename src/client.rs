@@ -99,7 +99,7 @@ impl Client {
                 (Origin::External, ClientEvent::Packet(packet?))
             },
             udp_packet = self.udp_conn.read_packet() => {
-                tracing::debug!("Got udp event!");
+                tracing::trace!("Got udp event!");
                 (Origin::External, ClientEvent::Packet(udp_packet?))
             },
             command = self.from_server.recv() => (Origin::Internal, ClientEvent::Command(command.ok_or(SMOError::RecvChannel)?)),
@@ -171,7 +171,9 @@ impl Client {
             }
             PacketData::UdpInit { port } => {
                 let ip = self.udp_conn.send_addr.ip();
-                self.udp_conn.send_addr = SocketAddr::new(ip, *port);
+                let new_addr = SocketAddr::new(ip, *port);
+                tracing::debug!("Setting new udp peer addr: {}", new_addr);
+                self.udp_conn.send_addr = new_addr;
                 false
             }
             _ => true,
@@ -251,63 +253,57 @@ impl Client {
         .await?;
 
         let udp = UdpSocket::bind("0.0.0.0:0").await?;
-        let udp_addr = udp.local_addr().expect("Failed to unwrap udp port");
-        tracing::debug!("Binding udp to: {:?}", udp_addr);
-        conn.write_packet(&Packet::new(
-            Guid::default(),
-            PacketData::UdpInit {
-                port: udp_addr.port(),
-            },
-        ))
-        .await?;
+        let local_udp_addr = udp.local_addr().expect("Failed to unwrap udp port");
+        tracing::debug!("Binding udp to: {:?}", local_udp_addr);
 
         tracing::debug!("setting new udp connection");
         let udp_addr = SocketAddr::new(tcp_sock_addr.ip(), 55446);
         let mut udp_conn = UdpConnection::new(udp, udp_addr);
 
         tracing::debug!("Waiting for reply");
-        let new_player = loop {
-            let connect = conn.read_packet().await?;
+        let connect = conn.read_packet().await?;
 
-            let new_player = match connect.data {
-                PacketData::UdpInit { port } => {
-                    let udp_addr = SocketAddr::new(tcp_sock_addr.ip(), port);
-                    tracing::debug!("Connecting to new udp: {:?}", udp_addr);
-                    udp_conn = UdpConnection::new(udp_conn.socket, udp_addr);
-                }
-                PacketData::Connect {
-                    client_name: ref name,
-                    ..
-                } => {
-                    let data = ClientData {
-                        settings,
-                        name: name.clone(),
-                        ..ClientData::default()
-                    };
+        let new_player = match connect.data {
+            PacketData::Connect {
+                client_name: ref name,
+                ..
+            } => {
+                let data = ClientData {
+                    settings,
+                    name: name.clone(),
+                    ..ClientData::default()
+                };
 
-                    let data = Arc::new(RwLock::new(data));
+                conn.write_packet(&Packet::new(
+                    Guid::default(),
+                    PacketData::UdpInit {
+                        port: local_udp_addr.port(),
+                    },
+                ))
+                .await?;
 
-                    let to_coord = to_coord.clone();
-                    tracing::debug!("Created client data");
-                    let client = Client {
-                        display_name: name.trim_matches(char::from(0)).to_string(),
-                        data,
-                        guid: connect.id,
-                        alive: true,
-                        to_coord,
-                        from_server,
-                        conn,
-                        udp_conn,
-                    };
+                let data = Arc::new(RwLock::new(data));
 
-                    break Ok(Command::Server(ServerCommand::NewPlayer {
-                        cli: client,
-                        connect_packet: Box::new(connect),
-                        comm: to_cli,
-                    }));
-                }
-                _ => break Err(SMOError::ClientInit(ClientInitError::BadHandshake)),
-            };
+                let to_coord = to_coord.clone();
+                tracing::debug!("Created client data");
+                let client = Client {
+                    display_name: name.trim_matches(char::from(0)).to_string(),
+                    data,
+                    guid: connect.id,
+                    alive: true,
+                    to_coord,
+                    from_server,
+                    conn,
+                    udp_conn,
+                };
+
+                Ok(Command::Server(ServerCommand::NewPlayer {
+                    cli: client,
+                    connect_packet: Box::new(connect),
+                    comm: to_cli,
+                }))
+            }
+            _ => Err(SMOError::ClientInit(ClientInitError::BadHandshake)),
         }?;
         tracing::debug!("Initialized player");
 
