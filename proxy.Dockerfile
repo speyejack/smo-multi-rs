@@ -4,4 +4,4 @@ RUN cargo build --package proxy --release
 
 FROM debian:buster-slim
 COPY --from=builder ./target/release/proxy ./target/release/proxy
-CMD ["/target/release/proxy"]
+ENTRYPOINT ["/target/release/proxy"]
