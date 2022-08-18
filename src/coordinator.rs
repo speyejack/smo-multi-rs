@@ -111,6 +111,11 @@ impl Coordinator {
         Ok(true)
     }
 
+    async fn persist_shines(&self) {
+        // TODO
+        tracing::warn!("Shine persisting not avaliable.")
+    }
+
     fn get_client(&self, id: &Guid) -> std::result::Result<&SyncClient, SMOError> {
         self.clients.get(id).ok_or(SMOError::InvalidID(*id))
     }
