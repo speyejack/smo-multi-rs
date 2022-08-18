@@ -54,8 +54,7 @@ impl Coordinator {
             Command::Packet(packet) => {
                 match &packet.data {
                     PacketData::Costume(_) => {
-                        self.sync_all_shines().await;
-                        // TODO Sync client
+                        self.sync_all_shines().await?;
                     }
                     PacketData::Shine { shine_id, .. } => {
                         self.shine_bag.write().await.insert(*shine_id);
@@ -70,12 +69,20 @@ impl Coordinator {
                         stage,
                     } => {
                         if stage == "CapWorldHomeStage" && *scenario_num == 0 {
-                            // TODO: Persist shrines
+                            let client = self.get_client(&packet.id)?;
+                            let mut data = client.write().await;
+                            tracing::info!("Player '{}' starting speedrun", data.name);
+                            data.speedrun_start = true;
+                            data.shine_sync.clear();
+                            drop(data);
+                            self.shine_bag.write().await.clear();
+                            self.persist_shines().await;
                         } else if stage == "WaterfallWordHomeStage" {
                             let client = self.get_client(&packet.id)?;
                             let mut data = client.write().await;
-                            let was_speed_run = data.speedrun;
-                            data.speedrun = true;
+                            tracing::info!("Enabling shine sync for player '{}'", data.name);
+                            let was_speed_run = data.speedrun_start;
+                            data.speedrun_start = false;
                             drop(data);
 
                             if was_speed_run {
@@ -280,7 +287,7 @@ async fn client_sync_shines(
     client: &SyncClient,
 ) -> Result<()> {
     let client = client.read().await;
-    if !client.speedrun {
+    if client.speedrun_start {
         return Ok(());
     }
 

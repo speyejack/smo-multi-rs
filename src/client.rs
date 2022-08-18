@@ -48,7 +48,7 @@ pub struct ClientData {
     pub is_2d: bool,
     pub is_seeking: bool,
     pub last_game_packet: Option<Packet>,
-    pub speedrun: bool,
+    pub speedrun_start: bool,
     pub loaded_save: bool,
     pub time: Duration,
     pub settings: SyncSettings,
@@ -141,7 +141,7 @@ impl Client {
                 data.scenario = *scenario_num;
                 data.last_game_packet = Some(packet.clone());
                 if stage == "CapWorldHomeStage" && *scenario_num == 0 {
-                    data.speedrun = true;
+                    data.speedrun_start = true;
                     data.shine_sync.clear();
                 }
 
