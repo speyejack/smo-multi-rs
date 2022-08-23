@@ -1,0 +1,7 @@
+/.git/
+/.dockerignore
+/.gitignore
+/docker-compose.yml
+/Dockerfile
+/proxy.Dockerfile
+/settings.json
