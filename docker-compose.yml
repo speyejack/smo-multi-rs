@@ -1,0 +1,54 @@
+version: "3.7"
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    user: 1000:1000
+    stdin_open: true
+    restart: unless-stopped
+    ports:
+    - 1027:1027/tcp
+    - 51888-51920:51888-51920/udp
+    environment:
+      RUST_LOG       : info
+      #RUST_BACKTRACE : 1
+    volumes:
+    - ./settings.json:/settings.json
+
+  proxy1:
+    build:
+      context: .
+      dockerfile: ./proxy.Dockerfile
+    user: 1000:1000
+    stdin_open: true
+    restart: unless-stopped
+    ports:
+    - 1028:1028/tcp
+    environment:
+      RUST_LOG       : info
+      #RUST_BACKTRACE : 1
+    command:
+    - "proxy"
+    - "server:1027"
+    - "0.0.0.0:1028"
+    - "0.0.0.0:54486"
+
+  proxy2:
+    build:
+      context: .
+      dockerfile: ./proxy.Dockerfile
+    user: 1000:1000
+    stdin_open: true
+    restart: unless-stopped
+    ports:
+    - 1029:1029/tcp
+    environment:
+      RUST_LOG       : info
+      #RUST_BACKTRACE : 1
+    command:
+    - "proxy"
+    - "server:1027"
+    - "0.0.0.0:1029"
+    - "0.0.0.0:54487"

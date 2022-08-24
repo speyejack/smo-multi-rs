@@ -18,12 +18,12 @@ COPY --from=planner /app/recipe.json ./recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
 COPY . .
-RUN cargo build --release --bin smo-rs
+RUN cargo build --package proxy --release
 
 ########################################################################
 
 FROM debian:buster-slim AS runtime
 
-COPY --from=builder ./target/release/smo-rs ./target/release/smo-rs
+COPY --from=builder ./target/release/proxy ./target/release/proxy
 
-ENTRYPOINT ["/target/release/smo-rs"]
+ENTRYPOINT ["/target/release/proxy"]
