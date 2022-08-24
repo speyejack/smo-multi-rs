@@ -193,7 +193,7 @@ async fn proxy_client(
 
         if use_udp && origin != plex {
             match packet.data {
-                PacketData::Player { .. } => {
+                PacketData::Player { .. } | PacketData::Cap { .. } => {
                     tracing::trace!("Sending over udp!");
                     udp.write_packet(&packet).await.unwrap();
                     continue;
