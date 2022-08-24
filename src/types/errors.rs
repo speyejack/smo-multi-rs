@@ -28,6 +28,8 @@ pub enum SMOError {
     ClientInit(#[from] ClientInitError),
     #[error("Invalid error")]
     JsonError(#[from] serde_json::Error),
+    #[error("Udp not initialized")]
+    UdpNotInit,
 }
 
 #[derive(Error, Debug)]

@@ -144,7 +144,7 @@ async fn proxy_client(
 
     let mut cli = Connection::new(cli_sock);
     let mut serv = Connection::new(serv_sock);
-    let mut udp = UdpConnection::new(udp, serv_udp_addr);
+    let mut udp = UdpConnection::from_connection(udp, serv_udp_addr);
     let mut use_udp = true;
     let mut last_tag_packet = Instant::now();
 
@@ -160,11 +160,6 @@ async fn proxy_client(
         let mut packet = packet_result?;
         packet.resize();
 
-        let (origin_conn, dest_conn) = match origin {
-            Origin::Client => (&mut cli, &mut serv),
-            Origin::Server => (&mut serv, &mut cli),
-        };
-
         tracing::debug!("got packet: {}", packet.data.get_type_name());
         match &packet.data {
             PacketData::Tag { .. } => {
@@ -177,7 +172,8 @@ async fn proxy_client(
             PacketData::UdpInit { port } => {
                 let addr = SocketAddr::new(serv_udp_addr.ip(), *port);
                 tracing::debug!("New udp peer: {:?}", addr);
-                udp = UdpConnection::new(udp.socket, addr);
+
+                udp.set_client_port(*port);
 
                 serv.write_packet(&Packet::new(
                     Guid::default(),
@@ -190,15 +186,19 @@ async fn proxy_client(
             _ => {}
         }
 
+        let (origin_conn, dest_conn) = match origin {
+            Origin::Client => (&mut cli, &mut serv),
+            Origin::Server => (&mut serv, &mut cli),
+        };
+
         if use_udp && origin != plex {
-            if let &Packet {
-                data: PacketData::Player { .. },
-                ..
-            } = &packet
-            {
-                tracing::trace!("Sending over udp!");
-                udp.write_packet(&packet).await.unwrap();
-                continue;
+            match packet.data {
+                PacketData::Player { .. } => {
+                    tracing::trace!("Sending over udp!");
+                    udp.write_packet(&packet).await.unwrap();
+                    continue;
+                }
+                _ => {}
             }
         }
         dest_conn.write_packet(&packet).await?

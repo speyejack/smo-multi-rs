@@ -172,10 +172,7 @@ impl Client {
                 true
             }
             PacketData::UdpInit { port } => {
-                let ip = self.udp_conn.send_addr.ip();
-                let new_addr = SocketAddr::new(ip, *port);
-                tracing::debug!("Setting new udp peer addr: {}", new_addr);
-                self.udp_conn.send_addr = new_addr;
+                self.udp_conn.set_client_port(*port);
                 false
             }
             _ => true,
@@ -225,9 +222,15 @@ impl Client {
                 packet.data.get_type_name()
             );
 
-            match packet.data {
-                PacketData::Player { .. } => self.udp_conn.write_packet(packet).await,
-                _ => self.conn.write_packet(packet).await,
+            if self.udp_conn.is_client_udp() {
+                // Use UDP traffic
+                match packet.data {
+                    PacketData::Player { .. } => self.udp_conn.write_packet(packet).await,
+                    _ => self.conn.write_packet(packet).await,
+                }
+            } else {
+                // Fall back to TCP traffic
+                self.conn.write_packet(packet).await
             }
         } else {
             Ok(())
@@ -261,8 +264,7 @@ impl Client {
         tracing::debug!("Binding udp to: {:?}", local_udp_addr);
 
         tracing::debug!("setting new udp connection");
-        let udp_addr = SocketAddr::new(tcp_sock_addr.ip(), 55446);
-        let mut udp_conn = UdpConnection::new(udp, udp_addr);
+        let udp_conn = UdpConnection::new(udp, tcp_sock_addr.ip());
 
         tracing::debug!("Waiting for reply");
         let connect = conn.read_packet().await?;
