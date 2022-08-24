@@ -6,7 +6,7 @@ use smoo::net::{encoding::Encodable, Packet, PacketData};
 use smoo::types::Result;
 use std::ops::Not;
 use std::time::Instant;
-use std::{io::Cursor, net::SocketAddr};
+use std::{io::Cursor, net::SocketAddr, net::ToSocketAddrs};
 use tokio;
 use tokio::net::UdpSocket;
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
@@ -66,8 +66,15 @@ async fn main() -> Result<()> {
             local_udp_ip.parse().unwrap(), // UDP
         );
 
+        // dns resolve server string, otherwise try to parse it as IPv4
+        let mut server_addrs = serv_ip.to_socket_addrs().unwrap();
+        let server_addr: SocketAddr = match server_addrs.next() {
+            Some(addr) => addr,
+            None => serv_ip.parse().unwrap(),
+        };
+
         let remote_addrs: RemoteAddrs = (
-            serv_ip.parse().unwrap(),
+            server_addr,
             "127.0.0.1:55445".parse().unwrap(), // Junk address
             Origin::Server,
         );
