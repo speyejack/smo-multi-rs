@@ -2,6 +2,7 @@ mod client;
 mod cmds;
 mod coordinator;
 mod guid;
+mod map;
 mod net;
 mod server;
 mod settings;
@@ -14,6 +15,7 @@ use client::ClientMap;
 use cmds::{Cli, Command};
 use coordinator::Coordinator;
 
+use map::MapperCli;
 use server::Server;
 use settings::{Settings, SyncSettings};
 use std::{
@@ -26,6 +28,7 @@ use std::{
 use tokio::{
     io::AsyncWriteExt,
     join,
+    net::TcpListener,
     sync::{mpsc, RwLock},
 };
 use tracing_subscriber::EnvFilter;
@@ -33,7 +36,7 @@ use tracing_subscriber::EnvFilter;
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing::info!("Starting server");
-    let (_to_coord, server, coordinator) = create_default_server();
+    let (_to_coord, server, coordinator, map_cli) = create_default_server();
     let settings = server.settings.read().await;
     let bind_addr = SocketAddr::new(settings.server.address, settings.server.port);
     tracing::info!("Binding tcp port to {}", bind_addr);
@@ -41,6 +44,7 @@ async fn main() -> Result<()> {
     drop(settings);
     let serv_task = tokio::task::spawn(server.listen_for_clients(bind_addr));
     let coord_task = tokio::task::spawn(coordinator.handle_commands());
+    let map_task = tokio::task::spawn(map_cli.handle_commands());
     // let parser_task = tokio::task::spawn(parse_commands(to_coord));
 
     tracing::info!("Server ready");
@@ -65,7 +69,7 @@ fn save_settings(settings: &Settings) -> Result<()> {
     Ok(())
 }
 
-fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
+fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator, MapperCli) {
     // TODO Remove tihs debug panic option
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -78,6 +82,7 @@ fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
         .init();
 
     let (to_coord, from_clients) = mpsc::channel(100);
+    let (to_map, from_coord) = mpsc::channel(10);
 
     let settings = read_settings().unwrap_or_default();
     save_settings(&settings).expect("Failed to save config");
@@ -95,8 +100,17 @@ fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
         settings,
         clients: ClientMap::new(),
         to_clients: HashMap::new(),
+        to_mapper: to_map,
     };
-    (to_coord, server, coordinator)
+
+    let map_bind_addr = SocketAddr::new("0.0.0.0".parse().unwrap(), 45544_u16.into());
+    let map_cli = MapperCli {
+        listener_addr: map_bind_addr,
+        from_coord,
+        positions: HashMap::new(),
+    };
+
+    (to_coord, server, coordinator, map_cli)
 }
 
 async fn parse_commands(mut to_coord: mpsc::Sender<Command>) -> Result<()> {

@@ -56,6 +56,7 @@ impl UdpConnection {
 
     pub async fn read_socket(&mut self) -> Result<()> {
         let mut buff = vec![0u8; 100];
+
         let read_amount = self.socket.recv_from(&mut buff).await?;
         self.buff.put_slice(&buff[..read_amount.0]);
         Ok(())

@@ -23,6 +23,7 @@ pub struct Coordinator {
     pub clients: ClientMap,
     pub to_clients: HashMap<Guid, mpsc::Sender<Command>>,
     pub from_clients: mpsc::Receiver<Command>,
+    pub to_mapper: mpsc::Sender<Command>,
 }
 
 impl Coordinator {
@@ -274,6 +275,7 @@ impl Coordinator {
         for cli in &mut self.to_clients.values() {
             cli.send(Command::Packet(p.clone())).await?;
         }
+        self.to_mapper.send(Command::Packet(p.clone())).await?;
         Ok(())
     }
 

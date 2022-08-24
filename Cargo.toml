@@ -20,7 +20,7 @@ tokio = {version="*", features=["full"]}
 clap = {version="*", features=["derive"]}
 serde = {version="*", features=["derive"]}
 anyhow = "*"
-nalgebra = "0.31.0"
+nalgebra = {version="0.31.0", features=["serde-serialize"]}
 bytes = "1.2.0"
 thiserror = "1.0.31"
 dashmap = "5.3.4"
@@ -29,6 +29,8 @@ tracing = {version="0.1.36"}
 tracing-subscriber = {version="0.3.15", features=["std", "env-filter", "fmt"]}
 quickcheck = "1.0.3"
 serde_json = "1.0.83"
+http = "0.2.8"
+futures = "0.3.23"
 
 [workspace]
 members = [
