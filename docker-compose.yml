@@ -4,7 +4,7 @@ services:
   server:
     build:
       context: .
-      dockerfile: ./Dockerfile
+      dockerfile: Dockerfile
     user: 1000:1000
     stdin_open: true
     restart: unless-stopped
@@ -17,10 +17,10 @@ services:
     volumes:
     - ./settings.json:/settings.json
 
-  proxy1:
+  proxy:
     build:
       context: .
-      dockerfile: ./proxy.Dockerfile
+      dockerfile: proxy.Dockerfile
     user: 1000:1000
     stdin_open: true
     restart: unless-stopped
@@ -33,22 +33,4 @@ services:
     - "proxy"
     - "server:1027"
     - "0.0.0.0:1028"
-    - "0.0.0.0:54486"
-
-  proxy2:
-    build:
-      context: .
-      dockerfile: ./proxy.Dockerfile
-    user: 1000:1000
-    stdin_open: true
-    restart: unless-stopped
-    ports:
-    - 1029:1029/tcp
-    environment:
-      RUST_LOG       : info
-      #RUST_BACKTRACE : 1
-    command:
-    - "proxy"
-    - "server:1027"
-    - "0.0.0.0:1029"
-    - "0.0.0.0:54487"
+    - "0.0.0.0:0"
