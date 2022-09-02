@@ -26,7 +26,7 @@ impl Server {
             let settings = self.settings.clone();
             let udp_port = base_udp_port + udp_offset;
             udp_offset += 1;
-            udp_offset %= 32;
+            udp_offset %= 2;
 
             tracing::info!("New client attempting to connect");
 

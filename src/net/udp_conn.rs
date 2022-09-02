@@ -105,6 +105,7 @@ impl UdpConnection {
     }
 
     pub async fn write_packet(&mut self, packet: &Packet) -> Result<()> {
+        tracing::trace!("Writing out udp packet: {:?}", packet);
         if let UdpSenderStatus::Connected(send_addr) = self.send_addr {
             let mut buff = BytesMut::with_capacity(MAX_PACKET_SIZE);
             packet.encode(&mut buff)?;

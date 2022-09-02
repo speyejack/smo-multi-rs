@@ -164,14 +164,14 @@ async fn proxy_client(
         match &packet.data {
             PacketData::Tag { .. } => {
                 if last_tag_packet.elapsed().as_millis() < 1000 {
-                    use_udp = !use_udp;
+                    // use_udp = !use_udp;
                     tracing::info!("Using udp: {}", use_udp);
                 }
                 last_tag_packet = Instant::now();
             }
             PacketData::UdpInit { port } => {
                 let addr = SocketAddr::new(serv_udp_addr.ip(), *port);
-                tracing::debug!("New udp peer: {:?}", addr);
+                tracing::info!("New udp peer: {:?}", addr);
 
                 udp.set_client_port(*port);
 

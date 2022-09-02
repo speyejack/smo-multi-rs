@@ -221,6 +221,7 @@ impl Client {
                 packet.id,
                 packet.data.get_type_name()
             );
+            tracing::debug!("Udp conn: {:?}", self.udp_conn);
 
             if self.udp_conn.is_client_udp() {
                 // Use UDP traffic
@@ -264,7 +265,7 @@ impl Client {
         tracing::debug!("Binding udp to: {:?}", local_udp_addr);
 
         tracing::debug!("setting new udp connection");
-        let udp_conn = UdpConnection::new(udp, tcp_sock_addr.ip());
+        let mut udp_conn = UdpConnection::new(udp, tcp_sock_addr.ip());
 
         tracing::debug!("Waiting for reply");
         let connect = conn.read_packet().await?;
@@ -280,13 +281,14 @@ impl Client {
                     ..ClientData::default()
                 };
 
-                conn.write_packet(&Packet::new(
-                    Guid::default(),
-                    PacketData::UdpInit {
-                        port: local_udp_addr.port(),
-                    },
-                ))
-                .await?;
+                // conn.write_packet(&Packet::new(
+                //     Guid::default(),
+                //     PacketData::UdpInit {
+                //         port: local_udp_addr.port(),
+                //     },
+                // ))
+                // .await?;
+                udp_conn.set_client_port(41553);
 
                 let data = Arc::new(RwLock::new(data));
 
