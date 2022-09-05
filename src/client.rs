@@ -281,14 +281,13 @@ impl Client {
                     ..ClientData::default()
                 };
 
-                // conn.write_packet(&Packet::new(
-                //     Guid::default(),
-                //     PacketData::UdpInit {
-                //         port: local_udp_addr.port(),
-                //     },
-                // ))
-                // .await?;
-                udp_conn.set_client_port(41553);
+                conn.write_packet(&Packet::new(
+                    Guid::default(),
+                    PacketData::UdpInit {
+                        port: local_udp_addr.port(),
+                    },
+                ))
+                .await?;
 
                 let data = Arc::new(RwLock::new(data));
 
