@@ -123,6 +123,7 @@ pub enum PacketData {
     UdpInit {
         port: u16,
     },
+    HolePunch,
 }
 
 impl PacketData {
@@ -142,6 +143,7 @@ impl PacketData {
             Self::ChangeStage { .. } => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
             Self::Command { .. } => 0,
             Self::UdpInit { .. } => 2,
+            Self::HolePunch { .. } => 0,
         }
     }
 
@@ -161,6 +163,7 @@ impl PacketData {
             Self::ChangeStage { .. } => 11,
             Self::Command { .. } => 12,
             Self::UdpInit { .. } => 13,
+            Self::HolePunch { .. } => 14,
         }
     }
 
@@ -180,6 +183,7 @@ impl PacketData {
             Self::ChangeStage { .. } => "changeStage",
             Self::Command { .. } => "command",
             Self::UdpInit { .. } => "udpInit",
+            Self::HolePunch { .. } => "holePunch",
         }
         .to_string()
     }
@@ -442,6 +446,7 @@ where
             PacketData::UdpInit { port } => {
                 buf.put_u16_le(*port);
             }
+            PacketData::HolePunch => {}
         }
 
         Ok(())
