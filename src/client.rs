@@ -226,7 +226,9 @@ impl Client {
             if self.udp_conn.is_client_udp() {
                 // Use UDP traffic
                 match packet.data {
-                    PacketData::Player { .. } => self.udp_conn.write_packet(packet).await,
+                    PacketData::Player { .. } | PacketData::Cap { .. } => {
+                        self.udp_conn.write_packet(packet).await
+                    }
                     _ => self.conn.write_packet(packet).await,
                 }
             } else {
