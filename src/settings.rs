@@ -15,9 +15,6 @@ pub struct Settings {
     pub ban_list: BanListSettings,
     pub discord: DiscordSettings,
     pub persist_shines: PersistShine,
-    // pub max_players: u16,
-    // pub banned_players: HashSet<Guid>,
-    // pub banned_ips: HashSet<IpAddr>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
