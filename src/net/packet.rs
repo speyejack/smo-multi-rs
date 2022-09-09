@@ -90,7 +90,7 @@ pub enum PacketData {
     },
     Game {
         is_2d: bool,
-        scenario_num: u8,
+        scenario_num: i8,
         stage: String,
     },
     Tag {
@@ -255,7 +255,7 @@ where
             }
             4 => PacketData::Game {
                 is_2d: buf.get_u8() != 0,
-                scenario_num: buf.get_u8(),
+                scenario_num: buf.get_i8(),
                 stage: buf_size_to_string(buf, STAGE_GAME_NAME_SIZE)?,
             },
             5 => PacketData::Tag {
@@ -374,7 +374,7 @@ where
                 stage,
             } => {
                 buf.put_u8((*is_2d).into());
-                buf.put_u8(*scenario_num);
+                buf.put_i8(*scenario_num);
                 buf.put_slice(&str_to_sized_array::<STAGE_GAME_NAME_SIZE>(stage));
             }
             PacketData::Tag {

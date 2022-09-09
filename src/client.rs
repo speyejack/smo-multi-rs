@@ -39,11 +39,11 @@ pub struct Client {
     pub from_server: mpsc::Receiver<Command>,
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PlayerData {
     pub name: String,
     pub shine_sync: HashSet<i32>,
-    pub scenario: u8,
+    pub scenario: i8,
     pub is_2d: bool,
     pub is_seeking: bool,
     pub last_game_packet: Option<Packet>,

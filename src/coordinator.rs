@@ -99,6 +99,18 @@ impl Coordinator {
                                     }
                                 });
                             }
+
+                            let merge_scenario = client
+                                .read()
+                                .await
+                                .settings
+                                .read()
+                                .await
+                                .scenario
+                                .merge_enabled;
+                            if merge_scenario {
+                                self.merge_scenario(&packet).await?;
+                            }
                         }
                     }
                     _ => {}
@@ -108,6 +120,24 @@ impl Coordinator {
             Command::Cli(_) => todo!(),
         }
         Ok(true)
+    }
+
+    async fn merge_scenario(&self, packet: &Packet) -> Result<()> {
+        for (guid, (channel, client)) in &self.clients {
+            let mut packet = packet.clone();
+            let scenario_num = client.read().await.scenario;
+            match &mut packet.data {
+                PacketData::ChangeStage {
+                    ref mut scenerio, ..
+                } => {
+                    *scenerio = scenario_num;
+                }
+                _ => {}
+            }
+
+            channel.send(Command::Packet(packet)).await?;
+        }
+        Ok(())
     }
 
     async fn persist_shines(&self) {
