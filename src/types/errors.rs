@@ -19,7 +19,7 @@ pub enum SMOError {
     #[error("Bad cli parsing")]
     Clap(#[from] clap::Error),
     #[error("Sending channel error")]
-    SendChannel(#[from] SendError<Command>),
+    SendChannel(#[from] Box<SendError<Command>>),
     #[error("Receiving channel error")]
     RecvChannel,
     #[error("Join error")]
@@ -30,6 +30,12 @@ pub enum SMOError {
     JsonError(#[from] serde_json::Error),
     #[error("Udp not initialized")]
     UdpNotInit,
+}
+
+impl From<SendError<Command>> for SMOError {
+    fn from(e: SendError<Command>) -> Self {
+        Box::new(e).into()
+    }
 }
 
 #[derive(Error, Debug)]
