@@ -11,7 +11,7 @@ use crate::types::ClientInitError;
 use crate::types::ErrorSeverity;
 use crate::types::{Costume, SMOError};
 use crate::types::{EncodingError, Result};
-use std::collections::{HashSet};
+use std::collections::HashSet;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
@@ -22,9 +22,6 @@ use tokio::net::TcpStream;
 use tokio::net::UdpSocket;
 use tokio::select;
 use tokio::sync::{mpsc, RwLock};
-
-
-
 
 pub type SyncPlayer = Arc<RwLock<PlayerData>>;
 
@@ -84,7 +81,6 @@ impl Client {
                     }
                     _ => Err(e),
                 },
-                Err(e) => Err(e),
             };
 
             if let Err(e) = result {
