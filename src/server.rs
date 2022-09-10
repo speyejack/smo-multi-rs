@@ -1,9 +1,6 @@
 use crate::types::Result;
 use std::net::SocketAddr;
-use tokio::{
-    net::{TcpListener},
-    sync::mpsc,
-};
+use tokio::{net::TcpListener, sync::mpsc};
 
 use crate::{client::Client, cmds::Command, settings::SyncSettings};
 
@@ -20,7 +17,17 @@ impl Server {
         let mut udp_offset = 0;
 
         loop {
-            let (socket, _) = listener.accept().await?;
+            let (socket, addr) = listener.accept().await?;
+
+            // Fast fail any banned ips before resource allocation
+            {
+                let settings = self.settings.read().await;
+                let banned_ips = &settings.ban_list.ips;
+
+                if banned_ips.contains(&addr.ip()) {
+                    tracing::warn!("Banned ip tried to connect: {}", addr.ip())
+                }
+            }
 
             let to_coord = self.to_coord.clone();
             let settings = self.settings.clone();
