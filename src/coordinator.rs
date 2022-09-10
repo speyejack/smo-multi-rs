@@ -2,7 +2,7 @@ use crate::{
     client::SyncPlayer,
     cmds::{Command, ServerCommand},
     guid::Guid,
-    net::{connection, ConnectionType, Packet, PacketData},
+    net::{connection, fixedStr::FixedString, ConnectionType, Packet, PacketData},
     settings::SyncSettings,
     types::{ClientInitError, Result, SMOError},
 };
@@ -67,7 +67,7 @@ impl Coordinator {
                         scenario_num,
                         stage,
                     } => {
-                        if stage == "CapWorldHomeStage" && *scenario_num == 0 {
+                        if stage.as_ref() == "CapWorldHomeStage" && *scenario_num == 0 {
                             let client = self.get_client(&packet.id)?;
                             let mut data = client.write().await;
                             tracing::info!("Player '{}' starting speedrun", data.name);
@@ -76,7 +76,7 @@ impl Coordinator {
                             drop(data);
                             self.shine_bag.write().await.clear();
                             self.persist_shines().await;
-                        } else if stage == "WaterfallWordHomeStage" {
+                        } else if stage.as_ref() == "WaterfallWordHomeStage" {
                             let client = self.get_client(&packet.id)?;
                             let mut data = client.write().await;
                             tracing::info!("Enabling shine sync for player '{}'", data.name);
@@ -252,7 +252,7 @@ impl Coordinator {
                 PacketData::Connect {
                     c_type: ConnectionType::FirstConnection,
                     max_player,
-                    client_name: other_cli.name.clone(),
+                    client_name: other_cli.name.clone().into(),
                 },
             );
 

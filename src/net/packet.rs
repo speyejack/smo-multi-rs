@@ -1,25 +1,29 @@
 use std::{fmt::Debug, io::Cursor};
 
-use super::encoding::{Decodable, Encodable};
+use super::{
+    encoding::{Decodable, Encodable},
+    fixedStr::FixedString,
+};
 use crate::{
     guid::Guid,
     types::{Costume, EncodingError, Quaternion, Vector3},
 };
 use bytes::{Buf, BufMut, BytesMut};
 use quickcheck::Arbitrary;
+use serde::Serialize;
 
 type Result<T> = std::result::Result<T, EncodingError>;
 
 pub const MAX_PACKET_SIZE: usize = 300;
 
-const COSTUME_NAME_SIZE: usize = 0x20;
+pub const COSTUME_NAME_SIZE: usize = 0x20;
 const CAP_ANIM_SIZE: usize = 0x30;
 const STAGE_GAME_NAME_SIZE: usize = 0x40;
 const STAGE_CHANGE_NAME_SIZE: usize = 0x30;
 const STAGE_ID_SIZE: usize = 0x10;
 const CLIENT_NAME_SIZE: usize = COSTUME_NAME_SIZE;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Packet {
     pub id: Guid,
     pub data_size: u16,
@@ -66,7 +70,7 @@ impl Packet {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum PacketData {
     Unhandled {
         tag: u16,
@@ -86,12 +90,12 @@ pub enum PacketData {
         pos: Vector3,
         rot: Quaternion,
         cap_out: bool,
-        cap_anim: String,
+        cap_anim: FixedString<CAP_ANIM_SIZE>,
     },
     Game {
         is_2d: bool,
         scenario_num: i8,
-        stage: String,
+        stage: FixedString<STAGE_GAME_NAME_SIZE>,
     },
     Tag {
         update_type: TagUpdate,
@@ -102,7 +106,7 @@ pub enum PacketData {
     Connect {
         c_type: ConnectionType,
         max_player: u16,
-        client_name: String,
+        client_name: FixedString<CLIENT_NAME_SIZE>,
     },
     Disconnect,
     Costume(Costume),
@@ -111,11 +115,11 @@ pub enum PacketData {
         is_grand: bool,
     },
     Capture {
-        model: String,
+        model: FixedString<COSTUME_NAME_SIZE>,
     },
     ChangeStage {
-        stage: String,
-        id: String,
+        stage: FixedString<STAGE_CHANGE_NAME_SIZE>,
+        id: FixedString<STAGE_ID_SIZE>,
         scenerio: i8,
         sub_scenario: u8,
     },
@@ -190,14 +194,14 @@ impl PacketData {
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum ConnectionType {
     FirstConnection,
     Reconnecting,
 }
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum TagUpdate {
     Time = 1,
     State = 2,
@@ -249,14 +253,15 @@ where
                     rot: Quaternion::decode(buf)?,
                     cap_out: buf.get_u8() != 0,
                     cap_anim: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
-                        .to_string(),
+                        .to_string()
+                        .into(),
                 };
                 packet
             }
             4 => PacketData::Game {
                 is_2d: buf.get_u8() != 0,
                 scenario_num: buf.get_i8(),
-                stage: buf_size_to_string(buf, STAGE_GAME_NAME_SIZE)?,
+                stage: buf_size_to_string(buf, STAGE_GAME_NAME_SIZE)?.into(),
             },
             5 => PacketData::Tag {
                 update_type: if buf.get_u8() == 1 {
@@ -276,7 +281,7 @@ where
                     ConnectionType::Reconnecting
                 };
                 let max_player = buf.get_u16_le();
-                let client_name = buf_size_to_string(buf, CLIENT_NAME_SIZE)?;
+                let client_name = buf_size_to_string(buf, CLIENT_NAME_SIZE)?.into();
                 PacketData::Connect {
                     c_type,
                     max_player,
@@ -285,19 +290,19 @@ where
             }
             7 => PacketData::Disconnect,
             8 => PacketData::Costume(Costume {
-                body_name: buf_size_to_string(buf, COSTUME_NAME_SIZE)?,
-                cap_name: buf_size_to_string(buf, COSTUME_NAME_SIZE)?,
+                body_name: buf_size_to_string(buf, COSTUME_NAME_SIZE)?.into(),
+                cap_name: buf_size_to_string(buf, COSTUME_NAME_SIZE)?.into(),
             }),
             9 => PacketData::Shine {
                 shine_id: buf.get_i32_le(),
                 is_grand: buf.get_u8() != 0,
             },
             10 => PacketData::Capture {
-                model: buf_size_to_string(buf, COSTUME_NAME_SIZE)?,
+                model: buf_size_to_string(buf, COSTUME_NAME_SIZE)?.into(),
             },
             11 => PacketData::ChangeStage {
-                stage: buf_size_to_string(buf, STAGE_CHANGE_NAME_SIZE)?,
-                id: buf_size_to_string(buf, STAGE_ID_SIZE)?,
+                stage: buf_size_to_string(buf, STAGE_CHANGE_NAME_SIZE)?.into(),
+                id: buf_size_to_string(buf, STAGE_ID_SIZE)?.into(),
                 scenerio: buf.get_i8(),
                 sub_scenario: buf.get_u8(),
             },
@@ -469,24 +474,25 @@ fn buf_size_to_string(buf: &mut impl Buf, size: usize) -> Result<String> {
 
 impl Arbitrary for Packet {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        let options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+        let options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
         let mut buff = BytesMut::with_capacity(MAX_PACKET_SIZE);
 
         let enum_num = g.choose(&options).unwrap();
         let size = match enum_num {
             1 => 2,
             2 => 0x38,
-            3 => 0x50,
-            4 => 0x42,
-            5 => 6,
-            6 => 6 + CLIENT_NAME_SIZE + 2,
+            3 => 29 + CAP_ANIM_SIZE,
+            4 => 2 + STAGE_GAME_NAME_SIZE,
+            5 => 5,
+            6 => 6 + CLIENT_NAME_SIZE,
             7 => 0,
             8 => COSTUME_NAME_SIZE * 2,
-            9 => 4,
+            9 => 5,
             10 => COSTUME_NAME_SIZE,
             11 => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
             12 => 0,
             13 => 2,
+            14 => 0,
             _ => 0,
         };
 

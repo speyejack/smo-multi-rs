@@ -139,7 +139,7 @@ impl Client {
                 data.is_2d = *is_2d;
                 data.scenario = *scenario_num;
                 data.last_game_packet = Some(packet.clone());
-                if stage == "CapWorldHomeStage" && *scenario_num == 0 {
+                if stage.as_ref() == "CapWorldHomeStage" && *scenario_num == 0 {
                     data.speedrun_start = true;
                     data.shine_sync.clear();
                 }
@@ -278,7 +278,7 @@ impl Client {
             } => {
                 let data = PlayerData {
                     settings,
-                    name: name.clone(),
+                    name: name.to_string(),
                     ..PlayerData::default()
                 };
 

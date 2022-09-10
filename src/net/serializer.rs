@@ -1,4 +1,5 @@
-use bytes::{BufMut, BytesMut};
+use crate::types::EncodingError;
+use bytes::{BufMut, Bytes, BytesMut};
 use serde::{
     ser::{
         SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple,
@@ -7,10 +8,20 @@ use serde::{
     Serialize, Serializer,
 };
 
-use crate::types::EncodingError;
-
-struct SMOSerializer {
+pub struct SMOSerializer {
     output: BytesMut,
+}
+
+impl SMOSerializer {
+    pub fn new() -> Self {
+        SMOSerializer {
+            output: BytesMut::with_capacity(300),
+        }
+    }
+
+    pub fn finalize(self) -> Bytes {
+        self.output.freeze()
+    }
 }
 
 impl<'a> Serializer for &'a mut SMOSerializer {
@@ -43,17 +54,17 @@ impl<'a> Serializer for &'a mut SMOSerializer {
     }
 
     fn serialize_i16(self, v: i16) -> Result<Self::Ok, Self::Error> {
-        self.output.put_i16(v);
+        self.output.put_i16_le(v);
         Ok(())
     }
 
     fn serialize_i32(self, v: i32) -> Result<Self::Ok, Self::Error> {
-        self.output.put_i32(v);
+        self.output.put_i32_le(v);
         Ok(())
     }
 
     fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
-        self.output.put_i64(v);
+        self.output.put_i64_le(v);
         Ok(())
     }
 
@@ -63,27 +74,27 @@ impl<'a> Serializer for &'a mut SMOSerializer {
     }
 
     fn serialize_u16(self, v: u16) -> Result<Self::Ok, Self::Error> {
-        self.output.put_u16(v);
+        self.output.put_u16_le(v);
         Ok(())
     }
 
     fn serialize_u32(self, v: u32) -> Result<Self::Ok, Self::Error> {
-        self.output.put_u32(v);
+        self.output.put_u32_le(v);
         Ok(())
     }
 
     fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
-        self.output.put_u64(v);
+        self.output.put_u64_le(v);
         Ok(())
     }
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
-        self.output.put_f32(v);
+        self.output.put_f32_le(v);
         Ok(())
     }
 
     fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
-        self.output.put_f64(v);
+        self.output.put_f64_le(v);
         Ok(())
     }
 
@@ -156,11 +167,11 @@ impl<'a> Serializer for &'a mut SMOSerializer {
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        unimplemented!()
+        Ok(self)
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        unimplemented!()
+        Ok(self)
     }
 
     fn serialize_tuple_struct(
@@ -190,7 +201,7 @@ impl<'a> Serializer for &'a mut SMOSerializer {
         _name: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
-        unimplemented!()
+        Ok(self)
     }
 
     fn serialize_struct_variant(
@@ -333,5 +344,38 @@ impl<'a> SerializeStructVariant for &'a mut SMOSerializer {
 
     fn end(self) -> Result<Self::Ok, Self::Error> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use bytes::BytesMut;
+    use serde::Serialize;
+
+    use crate::net::{encoding::Encodable, Packet};
+
+    use super::SMOSerializer;
+    use quickcheck::quickcheck;
+
+    quickcheck! {
+
+        fn serde_matched_decomp(p: Packet) -> bool {
+            println!("Created packet");
+            let mut ser = SMOSerializer::new();
+            p.serialize(&mut ser);
+
+            let serde_buf = ser.finalize();
+
+            println!("Serded buffer");
+            let mut pack_buf = BytesMut::with_capacity(500);
+
+            p.encode(&mut pack_buf);
+            println!("Encoded buffer");
+            let pack_bytes = pack_buf.freeze();
+
+            println!("Serde: {:?}", &serde_buf[..]);
+            println!("Pack:  {:?}", &pack_bytes[..]);
+            serde_buf[..] == pack_bytes[..]
+        }
     }
 }
