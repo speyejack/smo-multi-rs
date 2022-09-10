@@ -56,10 +56,27 @@ pub enum ClientInitError {
     TooManyPlayers,
     #[error("Client IP address banned")]
     BannedIP,
-    #[error("Client name banned")]
+    #[error("Client ID banned")]
     BannedID,
     #[error("Client handshake failed")]
     BadHandshake,
+}
+
+impl SMOError {
+    pub fn severity(&self) -> ErrorSeverity {
+        match self {
+            Self::Encoding(EncodingError::ConnectionClose)
+            | Self::Encoding(EncodingError::ConnectionReset)
+            | Self::RecvChannel => ErrorSeverity::ClientFatal,
+            _ => ErrorSeverity::NonCritical,
+        }
+    }
+}
+
+pub enum ErrorSeverity {
+    ServerFatal,
+    ClientFatal,
+    NonCritical,
 }
 
 impl SerError for EncodingError {
