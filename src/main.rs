@@ -14,7 +14,7 @@ use cmds::{Cli, Command};
 use coordinator::Coordinator;
 
 use server::Server;
-use settings::{Settings, SyncSettings};
+use settings::{Settings};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,

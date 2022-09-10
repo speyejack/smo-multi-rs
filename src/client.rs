@@ -1,7 +1,7 @@
 use crate::cmds::Command;
 use crate::cmds::ServerCommand;
 use crate::guid::Guid;
-use crate::net::connection;
+
 use crate::net::connection::Connection;
 use crate::net::udp_conn::UdpConnection;
 use crate::net::Packet;
@@ -11,7 +11,7 @@ use crate::types::ClientInitError;
 use crate::types::ErrorSeverity;
 use crate::types::{Costume, SMOError};
 use crate::types::{EncodingError, Result};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet};
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
@@ -22,9 +22,9 @@ use tokio::net::TcpStream;
 use tokio::net::UdpSocket;
 use tokio::select;
 use tokio::sync::{mpsc, RwLock};
-use tracing::info;
-use tracing::info_span;
-use tracing::instrument;
+
+
+
 
 pub type SyncPlayer = Arc<RwLock<PlayerData>>;
 
@@ -268,7 +268,7 @@ impl Client {
         tracing::debug!("Binding udp to: {:?}", local_udp_addr);
 
         tracing::debug!("setting new udp connection");
-        let mut udp_conn = UdpConnection::new(udp, tcp_sock_addr.ip());
+        let udp_conn = UdpConnection::new(udp, tcp_sock_addr.ip());
 
         tracing::debug!("Waiting for reply");
         let connect = conn.read_packet().await?;

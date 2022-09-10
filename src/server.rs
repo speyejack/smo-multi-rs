@@ -1,7 +1,7 @@
 use crate::types::Result;
 use std::net::SocketAddr;
 use tokio::{
-    net::{TcpListener, TcpStream},
+    net::{TcpListener},
     sync::mpsc,
 };
 

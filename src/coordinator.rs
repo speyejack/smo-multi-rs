@@ -2,14 +2,13 @@ use crate::{
     client::SyncPlayer,
     cmds::{Command, ServerCommand},
     guid::Guid,
-    net::{connection, ConnectionType, Packet, PacketData},
+    net::{ConnectionType, Packet, PacketData},
     settings::SyncSettings,
     types::{ClientInitError, Result, SMOError},
 };
 
 use std::{
     collections::{HashMap, HashSet},
-    net::IpAddr,
     sync::Arc,
     time::Duration,
 };
@@ -123,7 +122,7 @@ impl Coordinator {
     }
 
     async fn merge_scenario(&self, packet: &Packet) -> Result<()> {
-        for (guid, (channel, client)) in &self.clients {
+        for (_guid, (channel, client)) in &self.clients {
             let mut packet = packet.clone();
             let scenario_num = client.read().await.scenario;
             match &mut packet.data {
@@ -169,7 +168,7 @@ impl Coordinator {
             _ => unreachable!(),
         };
 
-        let (connection_type, client_name) = match &packet.data {
+        let (connection_type, _client_name) = match &packet.data {
             PacketData::Connect {
                 c_type,
                 client_name,
@@ -287,7 +286,7 @@ impl Coordinator {
     }
 
     async fn sync_all_shines(&mut self) -> Result<()> {
-        for (guid, (channel, player)) in &self.clients {
+        for (_guid, (channel, player)) in &self.clients {
             let sender_guid = Guid::default();
             client_sync_shines(
                 channel.clone(),

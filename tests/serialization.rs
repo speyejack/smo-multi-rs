@@ -1,9 +1,9 @@
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use quickcheck::quickcheck;
-use smoo::cmds::TagCommand;
-use smoo::guid::Guid;
+use bytes::{BufMut, BytesMut};
+
+
+
 use smoo::net::encoding::{Decodable, Encodable};
-use smoo::net::{Packet, TagUpdate};
+use smoo::net::{Packet};
 
 // quickcheck! {
 //     fn round_trip(p: Packet) -> bool {

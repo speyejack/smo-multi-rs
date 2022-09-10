@@ -1,7 +1,7 @@
 use crate::{
     client::Client,
     guid::Guid,
-    net::{ConnectionType, Packet},
+    net::{Packet},
 };
 use std::{convert::Infallible, str::FromStr};
 
