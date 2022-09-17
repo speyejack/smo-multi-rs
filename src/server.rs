@@ -1,6 +1,9 @@
-use crate::types::Result;
+use crate::{cmds::BroadcastCommand, types::Result};
 use std::net::SocketAddr;
-use tokio::{net::TcpListener, sync::mpsc};
+use tokio::{
+    net::TcpListener,
+    sync::{broadcast, mpsc},
+};
 
 use crate::{client::Client, cmds::Command, settings::SyncSettings};
 
@@ -8,6 +11,8 @@ pub struct Server {
     pub to_coord: mpsc::Sender<Command>,
     pub settings: SyncSettings,
     pub udp_port: u16,
+    pub to_others: broadcast::Sender<BroadcastCommand>,
+    pub from_others: broadcast::Receiver<BroadcastCommand>,
 }
 
 impl Server {
@@ -31,6 +36,8 @@ impl Server {
 
             let to_coord = self.to_coord.clone();
             let settings = self.settings.clone();
+            let to_others = self.to_others.clone();
+            let from_others = self.to_others.subscribe();
             let udp_port = base_udp_port + udp_offset;
             udp_offset += 1;
             udp_offset %= 32;
@@ -38,8 +45,15 @@ impl Server {
             tracing::info!("New client attempting to connect");
 
             tokio::spawn(async move {
-                let cli_result =
-                    Client::initialize_client(socket, to_coord, udp_port, settings).await;
+                let cli_result = Client::initialize_client(
+                    socket,
+                    to_coord,
+                    to_others,
+                    from_others,
+                    udp_port,
+                    settings,
+                )
+                .await;
 
                 if let Err(e) = cli_result {
                     tracing::warn!("Client failed to begin: {}", e)

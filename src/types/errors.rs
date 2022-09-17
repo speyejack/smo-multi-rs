@@ -1,10 +1,16 @@
 use std::{num::TryFromIntError, str::Utf8Error};
 
-use crate::{cmds::Command, guid::Guid};
+use crate::{
+    cmds::{BroadcastCommand, Command},
+    guid::Guid,
+};
 use hex::FromHexError;
 use serde::{de::Error as DeError, ser::Error as SerError};
 use thiserror::*;
-use tokio::{sync::mpsc::error::SendError, task::JoinError};
+use tokio::{
+    sync::{broadcast, mpsc::error::SendError},
+    task::JoinError,
+};
 pub type Result<T> = std::result::Result<T, SMOError>;
 
 #[derive(Error, Debug)]
@@ -22,6 +28,10 @@ pub enum SMOError {
     SendChannel(#[from] Box<SendError<Command>>),
     #[error("Receiving channel error")]
     RecvChannel,
+    #[error("Sending broadcast channel error")]
+    SendBroadChannel(#[from] Box<broadcast::error::SendError<BroadcastCommand>>),
+    #[error("Receiving broadcast channel error")]
+    RecvBroadChannel(#[from] broadcast::error::RecvError),
     #[error("Join error")]
     ThreadJoin(#[from] JoinError),
     #[error("Failed to initialize client: {0}")]
@@ -34,6 +44,12 @@ pub enum SMOError {
 
 impl From<SendError<Command>> for SMOError {
     fn from(e: SendError<Command>) -> Self {
+        Box::new(e).into()
+    }
+}
+
+impl From<broadcast::error::SendError<BroadcastCommand>> for SMOError {
+    fn from(e: broadcast::error::SendError<BroadcastCommand>) -> Self {
         Box::new(e).into()
     }
 }
@@ -73,6 +89,7 @@ impl SMOError {
         match self {
             Self::Encoding(EncodingError::ConnectionClose)
             | Self::Encoding(EncodingError::ConnectionReset)
+            | Self::RecvBroadChannel(_)
             | Self::RecvChannel => ErrorSeverity::ClientFatal,
             _ => ErrorSeverity::NonCritical,
         }

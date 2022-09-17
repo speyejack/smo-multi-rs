@@ -1,3 +1,4 @@
+use crate::cmds::BroadcastCommand;
 use crate::cmds::Command;
 use crate::cmds::ServerCommand;
 use crate::guid::Guid;
@@ -21,6 +22,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::net::UdpSocket;
 use tokio::select;
+use tokio::sync::broadcast;
 use tokio::sync::{mpsc, RwLock};
 
 pub type SyncPlayer = Arc<RwLock<PlayerData>>;
@@ -35,6 +37,8 @@ pub struct Client {
     pub udp_conn: UdpConnection,
     pub to_coord: mpsc::Sender<Command>,
     pub from_server: mpsc::Receiver<Command>,
+    pub from_others: broadcast::Receiver<BroadcastCommand>,
+    pub to_others: broadcast::Sender<BroadcastCommand>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -62,6 +66,12 @@ enum Origin {
 enum ClientEvent {
     Packet(Packet),
     Command(Command),
+}
+
+enum SendLocation {
+    Broadcast,
+    Coordinator,
+    NoSend,
 }
 
 impl Client {
@@ -102,6 +112,9 @@ impl Client {
                 (Origin::External, ClientEvent::Packet(udp_packet?))
             },
             command = self.from_server.recv() => (Origin::Internal, ClientEvent::Command(command.ok_or(SMOError::RecvChannel)?)),
+            packet = self.from_others.recv() => (Origin::Internal, ClientEvent::Packet(match (packet)? {
+                BroadcastCommand::Packet(e) => e,
+            })),
         };
         Ok(event)
     }
@@ -119,14 +132,14 @@ impl Client {
 
     async fn handle_packet(&mut self, packet: Packet) -> Result<()> {
         tracing::debug!("Handling packet: {}", &packet.data.get_type_name());
-        let send_to_coord = match &packet.data {
+        let send_location = match &packet.data {
             PacketData::Costume(costume) => {
                 // TODO: Figure out why shine sync code in original
                 // code base for costume packet
                 let mut data = self.player.write().await;
                 data.costume = costume.clone();
                 data.loaded_save = true;
-                true
+                SendLocation::Coordinator
             }
             PacketData::Game {
                 is_2d,
@@ -142,7 +155,7 @@ impl Client {
                     data.shine_sync.clear();
                 }
 
-                true
+                SendLocation::Coordinator
             }
             PacketData::Tag {
                 update_type,
@@ -159,24 +172,28 @@ impl Client {
                         data.is_seeking = *is_it;
                     }
                 }
-                true
+                SendLocation::Broadcast
             }
             PacketData::Shine { shine_id, .. } => {
                 let mut data = self.player.write().await;
                 if data.loaded_save {
                     data.shine_sync.insert(*shine_id);
                 }
-                true
+                SendLocation::Coordinator
             }
             PacketData::UdpInit { port } => {
                 self.udp_conn.set_client_port(*port);
-                false
+                SendLocation::NoSend
             }
-            _ => true,
+            _ => SendLocation::Broadcast,
         };
 
-        if send_to_coord {
-            self.to_coord.send(Command::Packet(packet)).await?;
+        match send_location {
+            SendLocation::Broadcast => {
+                self.to_others.send(BroadcastCommand::Packet(packet))?;
+            }
+            SendLocation::Coordinator => self.to_coord.send(Command::Packet(packet)).await?,
+            SendLocation::NoSend => {}
         }
 
         Ok(())
@@ -240,6 +257,8 @@ impl Client {
     pub async fn initialize_client(
         socket: TcpStream,
         to_coord: mpsc::Sender<Command>,
+        to_others: broadcast::Sender<BroadcastCommand>,
+        from_others: broadcast::Receiver<BroadcastCommand>,
         udp_port: u16,
         settings: SyncSettings,
     ) -> Result<()> {
@@ -301,6 +320,8 @@ impl Client {
                     from_server,
                     conn,
                     udp_conn,
+                    to_others,
+                    from_others,
                 };
 
                 Ok(Command::Server(ServerCommand::NewPlayer {

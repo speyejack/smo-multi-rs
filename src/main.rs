@@ -14,7 +14,7 @@ use cmds::{Cli, Command};
 use coordinator::Coordinator;
 
 use server::Server;
-use settings::{Settings};
+use settings::Settings;
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
@@ -25,7 +25,7 @@ use std::{
 use tokio::{
     io::AsyncWriteExt,
     join,
-    sync::{mpsc, RwLock},
+    sync::{broadcast, mpsc, RwLock},
 };
 use tracing_subscriber::EnvFilter;
 
@@ -77,6 +77,7 @@ fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
         .init();
 
     let (to_coord, from_clients) = mpsc::channel(100);
+    let (to_others, from_others) = broadcast::channel(100);
 
     let settings = read_settings().unwrap_or_default();
     save_settings(&settings).expect("Failed to save config");
@@ -86,12 +87,15 @@ fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
     let server = Server {
         settings: settings.clone(),
         to_coord: to_coord.clone(),
+        to_others: to_others.clone(),
+        from_others,
         udp_port: 51888,
     };
     let coordinator = Coordinator {
         shine_bag: Arc::new(RwLock::new(HashSet::default())),
         from_clients,
         settings,
+        broadcast_channel: to_others,
         clients: HashMap::new(),
     };
     (to_coord, server, coordinator)

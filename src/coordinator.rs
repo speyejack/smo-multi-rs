@@ -1,6 +1,6 @@
 use crate::{
     client::SyncPlayer,
-    cmds::{Command, ServerCommand},
+    cmds::{BroadcastCommand, Command, ServerCommand},
     guid::Guid,
     net::{ConnectionType, Packet, PacketData},
     settings::SyncSettings,
@@ -12,7 +12,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{info_span, Instrument};
 type SyncShineBag = Arc<RwLock<HashSet<i32>>>;
 
@@ -21,6 +21,7 @@ pub struct Coordinator {
     pub settings: SyncSettings,
     pub clients: HashMap<Guid, (mpsc::Sender<Command>, SyncPlayer)>,
     pub from_clients: mpsc::Receiver<Command>,
+    pub broadcast_channel: broadcast::Sender<BroadcastCommand>,
 }
 
 impl Coordinator {
@@ -312,6 +313,7 @@ impl Coordinator {
         for guid in active_clients.keys() {
             let _ = self.disconnect_player(*guid).await;
         }
+        self.from_clients.close();
     }
 }
 

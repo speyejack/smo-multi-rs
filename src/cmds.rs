@@ -1,15 +1,17 @@
-use crate::{
-    client::Client,
-    guid::Guid,
-    net::{Packet},
-};
+use crate::{client::Client, guid::Guid, net::Packet};
 use std::{convert::Infallible, str::FromStr};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use tokio::sync::mpsc;
 
+#[derive(Debug, Clone)]
+pub enum BroadcastCommand {
+    Packet(Packet),
+}
+
 #[derive(Debug)]
 pub enum Command {
+    ReplacePacket(Packet),
     Packet(Packet),
     Cli(CliCommand),
     Server(ServerCommand),
