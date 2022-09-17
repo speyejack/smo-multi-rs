@@ -2,6 +2,7 @@ mod client;
 mod cmds;
 mod coordinator;
 mod guid;
+mod listener;
 mod net;
 mod server;
 mod settings;
@@ -9,43 +10,26 @@ mod types;
 
 use crate::types::Result;
 
-use clap::Parser;
-use cmds::{Cli, Command};
-use coordinator::Coordinator;
-
 use server::Server;
-use settings::{Settings};
+use settings::Settings;
 use std::{
-    collections::{HashMap, HashSet},
     fs::File,
-    io::{BufReader, BufWriter, Write},
+    io::{BufReader, BufWriter},
     net::SocketAddr,
-    sync::Arc,
-};
-use tokio::{
-    io::AsyncWriteExt,
-    join,
-    sync::{mpsc, RwLock},
 };
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing::info!("Starting server");
-    let (_to_coord, server, coordinator) = create_default_server();
+    let server = create_server();
     let settings = server.settings.read().await;
     let bind_addr = SocketAddr::new(settings.server.address, settings.server.port);
     tracing::info!("Binding tcp port to {}", bind_addr);
 
     drop(settings);
-    let serv_task = tokio::task::spawn(server.listen_for_clients(bind_addr));
-    let coord_task = tokio::task::spawn(coordinator.handle_commands());
-    // let parser_task = tokio::task::spawn(parse_commands(to_coord));
-
     tracing::info!("Server ready");
-    // let _results = tokio::join!(serv_task, coord_task, parser_task);
-    let _results = tokio::join!(serv_task, coord_task);
-    Ok(())
+    server.spawn_minimal_server(bind_addr).await
 }
 
 fn read_settings() -> Result<Settings> {
@@ -64,7 +48,7 @@ fn save_settings(settings: &Settings) -> Result<()> {
     Ok(())
 }
 
-fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
+fn create_server() -> Server {
     // TODO Remove tihs debug panic option
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -76,53 +60,10 @@ fn create_default_server() -> (mpsc::Sender<Command>, Server, Coordinator) {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let (to_coord, from_clients) = mpsc::channel(100);
-
     let settings = read_settings().unwrap_or_default();
     save_settings(&settings).expect("Failed to save config");
 
-    let settings = Arc::new(RwLock::new(settings));
-
-    let server = Server {
-        settings: settings.clone(),
-        to_coord: to_coord.clone(),
-        udp_port: 51888,
-    };
-    let coordinator = Coordinator {
-        shine_bag: Arc::new(RwLock::new(HashSet::default())),
-        from_clients,
-        settings,
-        clients: HashMap::new(),
-    };
-    (to_coord, server, coordinator)
-}
-
-async fn parse_commands(mut to_coord: mpsc::Sender<Command>) -> Result<()> {
-    loop {
-        let command_result = parse_command(&mut to_coord).await;
-
-        if let Err(e) = command_result {
-            println!("{}", e)
-        }
-    }
-}
-
-async fn parse_command(to_coord: &mut mpsc::Sender<Command>) -> Result<()> {
-    let task = tokio::task::spawn_blocking(|| async { read_command() });
-    let command: Cli = join!(task).0?.await?;
-
-    Ok(to_coord.send(Command::Cli(command.cmd)).await?)
-}
-
-fn read_command() -> Result<Cli> {
-    let mut input = "> ".to_string();
-
-    print!("{}", input);
-    std::io::stdout().flush()?;
-    std::io::stdin().read_line(&mut input)?;
-    let input = input.trim().split(' ');
-    let cli = Cli::try_parse_from(input)?;
-    Ok(cli)
+    Server::build_server(settings)
 }
 
 #[cfg(test)]
@@ -142,7 +83,7 @@ mod test {
     #[tokio::test]
     async fn client_connect() -> Result<()> {
         let addr = "127.0.0.1:61884".parse().unwrap();
-        let (to_coord, server, coordinator) = create_default_server();
+        let (to_coord, server, coordinator) = create_server();
         let serv_task = tokio::task::spawn(server.listen_for_clients(addr));
         let coord_task = tokio::task::spawn(coordinator.handle_commands());
 

@@ -24,7 +24,7 @@ pub struct Coordinator {
 }
 
 impl Coordinator {
-    pub async fn handle_commands(mut self) {
+    pub async fn handle_commands(mut self) -> Result<()> {
         loop {
             let cmd = self.from_clients.recv().await;
             if let Some(c) = cmd {
@@ -40,6 +40,7 @@ impl Coordinator {
         }
 
         self.shutdown().await;
+        Ok(())
     }
 
     async fn handle_command(&mut self, cmd: Command) -> Result<bool> {

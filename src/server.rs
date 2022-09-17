@@ -1,50 +1,97 @@
-use crate::types::Result;
-use std::net::SocketAddr;
-use tokio::{net::TcpListener, sync::mpsc};
+use crate::{
+    cmds::Cli,
+    coordinator::Coordinator,
+    listener::Listener,
+    settings::{Settings, SyncSettings},
+    types::Result,
+};
+use clap::Parser;
+use std::{
+    collections::{HashMap, HashSet},
+    io::Write,
+    net::SocketAddr,
+    sync::Arc,
+};
+use tokio::sync::{mpsc, RwLock};
 
-use crate::{client::Client, cmds::Command, settings::SyncSettings};
+use crate::cmds::Command;
 
 pub struct Server {
-    pub to_coord: mpsc::Sender<Command>,
     pub settings: SyncSettings,
-    pub udp_port: u16,
+    pub to_coord: mpsc::Sender<Command>,
+    pub listener: Listener,
+    pub coord: Coordinator,
 }
 
 impl Server {
-    pub async fn listen_for_clients(self, addr: SocketAddr) -> Result<()> {
-        let listener = TcpListener::bind(addr).await?;
-        let base_udp_port = self.udp_port;
-        let mut udp_offset = 0;
+    pub fn build_server(settings: Settings) -> Server {
+        let (to_coord, from_clients) = mpsc::channel(100);
 
-        loop {
-            let (socket, addr) = listener.accept().await?;
+        let settings = Arc::new(RwLock::new(settings));
 
-            // Fast fail any banned ips before resource allocation
-            {
-                let settings = self.settings.read().await;
-                let banned_ips = &settings.ban_list.ips;
+        let listener = Listener {
+            settings: settings.clone(),
+            to_coord: to_coord.clone(),
+            udp_port: 51888,
+        };
 
-                if banned_ips.contains(&addr.ip()) {
-                    tracing::warn!("Banned ip tried to connect: {}", addr.ip())
-                }
-            }
+        let coord = Coordinator {
+            shine_bag: Arc::new(RwLock::new(HashSet::default())),
+            from_clients,
+            settings: settings.clone(),
+            clients: HashMap::new(),
+        };
 
-            let to_coord = self.to_coord.clone();
-            let settings = self.settings.clone();
-            let udp_port = base_udp_port + udp_offset;
-            udp_offset += 1;
-            udp_offset %= 32;
-
-            tracing::info!("New client attempting to connect");
-
-            tokio::spawn(async move {
-                let cli_result =
-                    Client::initialize_client(socket, to_coord, udp_port, settings).await;
-
-                if let Err(e) = cli_result {
-                    tracing::warn!("Client failed to begin: {}", e)
-                }
-            });
+        Server {
+            settings,
+            to_coord,
+            listener,
+            coord,
         }
     }
+
+    pub async fn spawn_minimal_server(self, bind_addr: SocketAddr) -> Result<()> {
+        let serv_task = tokio::task::spawn(self.listener.listen_for_clients(bind_addr));
+        let coord_task = tokio::task::spawn(self.coord.handle_commands());
+
+        let _result = tokio::join!(serv_task, coord_task);
+        Ok(())
+    }
+
+    pub async fn spawn_full_server(self, bind_addr: SocketAddr) -> Result<()> {
+        let serv_task = tokio::task::spawn(self.listener.listen_for_clients(bind_addr));
+        let coord_task = tokio::task::spawn(self.coord.handle_commands());
+        let parser_task = tokio::task::spawn(parse_commands(self.to_coord.clone()));
+
+        let _results = tokio::join!(serv_task, coord_task, parser_task);
+        Ok(())
+    }
+}
+
+async fn parse_commands(mut to_coord: mpsc::Sender<Command>) -> Result<()> {
+    loop {
+        let command_result = parse_command(&mut to_coord).await;
+
+        if let Err(e) = command_result {
+            println!("{}", e)
+        }
+    }
+}
+
+async fn parse_command(to_coord: &mut mpsc::Sender<Command>) -> Result<()> {
+    let task = tokio::task::spawn_blocking(|| async { read_command() });
+    let command: Cli = tokio::join!(task).0?.await?;
+
+    Ok(to_coord.send(Command::Cli(command.cmd)).await?)
+}
+
+fn read_command() -> Result<Cli> {
+    let mut input = "> ".to_string();
+
+    print!("{}", input);
+    std::io::stdout().flush()?;
+    std::io::stdin().read_line(&mut input)?;
+    let input = input.trim().split(' ');
+    let cli = Cli::try_parse_from(input)?;
+    Ok(cli)
 }
