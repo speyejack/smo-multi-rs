@@ -269,7 +269,6 @@ where
                 minutes: buf.get_u16_le(),
             },
             6 => {
-                tracing::debug!("Parsing connect: {}", buf.remaining());
                 let c_type = if buf.get_u32_le() == 0 {
                     ConnectionType::FirstConnection
                 } else {
