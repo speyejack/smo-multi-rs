@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     net::{IpAddr, SocketAddr},
+    str::FromStr,
     sync::Arc,
     time::Duration,
 };
@@ -13,7 +14,7 @@ use smoo::{
     settings::Settings,
 };
 use tokio::{
-    net::TcpStream,
+    net::{TcpStream, UdpSocket},
     select,
     sync::{mpsc, RwLock},
     time::timeout,
@@ -23,16 +24,20 @@ use tracing_subscriber::EnvFilter;
 struct MockClient {
     pub guid: Guid,
     pub tcp: Connection,
-    pub udp: Option<UdpConnection>,
+    pub udp: UdpConnection,
 }
 
 impl MockClient {
     pub async fn connect(serv_ip: SocketAddr) -> Self {
-        let guid = Guid::default();
+        let guid = Guid::from_str("1000000000-2000-3000-4000-5000000000").unwrap();
         let tcp_stream = TcpStream::connect(serv_ip)
             .await
             .expect("TCP Stream creation failed");
         let mut tcp = Connection::new(tcp_stream);
+        let udp_sock = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("Couldn't bind udp port");
+        let udp = UdpConnection::new(udp_sock, "127.0.0.1".parse().unwrap());
 
         let init_packet = timeout(Duration::from_millis(1), tcp.read_packet())
             .await
@@ -56,29 +61,33 @@ impl MockClient {
             .await
             .expect("Failed to send connect packet");
 
-        Self {
-            guid,
-            tcp,
-            udp: None,
-        }
+        Self { guid, tcp, udp }
     }
 
     pub async fn get_packet(&mut self) -> Packet {
-        let packet = self
-            .tcp
-            .read_packet()
-            .await
-            .expect("Failed to parse packet");
-        packet
+        tokio::select! {
+            packet = self.tcp.read_packet() => packet.expect("Failed to parse tcp packet"),
+            packet = self.udp.read_packet() => packet.expect("Failed to parse udp packet"),
+        }
     }
 
     pub async fn send_packet(&mut self, p: &Packet) {
-        let packet = self
-            .tcp
+        match p.data {
+            PacketData::Player { .. } | PacketData::Cap { .. } => self
+                .udp
+                .write_packet(&p)
+                .await
+                .expect("Failed to send udp packet"),
+            _ => self
+                .tcp
+                .write_packet(&p)
+                .await
+                .expect("Failed to send tcp packet"),
+        }
+        self.tcp
             .write_packet(&p)
             .await
             .expect("Failed to send packet");
-        packet
     }
 
     pub async fn replay_player(mut self) {
@@ -93,7 +102,7 @@ impl MockClient {
                 | PacketData::Tag { .. }
                 | PacketData::Capture { .. }
                 | PacketData::ChangeStage { .. } => {}
-                PacketData::UdpInit { port } => tracing::warn!("Mock didnt handle udp"),
+                PacketData::UdpInit { port } => self.udp.set_client_port(port),
                 _ => continue,
             }
 
