@@ -58,7 +58,7 @@ pub struct PlayerData {
     pub speedrun_start: bool,
     pub loaded_save: bool,
     pub time: Duration,
-    pub costume: Costume,
+    pub costume: Option<Costume>,
 }
 
 #[derive(Debug)]
@@ -164,7 +164,7 @@ impl Client {
             }
             PacketData::Costume(costume) => {
                 let mut data = self.player.write().await;
-                data.costume = costume.clone();
+                data.costume = Some(costume.clone());
                 data.loaded_save = true;
                 PacketDestination::Coordinator
             }
