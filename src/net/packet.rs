@@ -42,13 +42,17 @@ impl Packet {
     }
 
     pub fn check(buf: &mut Cursor<&[u8]>) -> Result<u64> {
-        let header_size = 16 + 2;
+        let id_size = 16;
+        let type_size = 2;
+        let size_size = 2;
+        let header_size = id_size + type_size + size_size;
+
         let start_pos = buf.position();
-        if buf.remaining() < header_size + 2 {
+        if buf.remaining() < header_size {
             return Err(EncodingError::NotEnoughData);
         }
 
-        buf.advance(header_size);
+        buf.advance(id_size + type_size);
         let size = buf.get_u16_le().into();
         if buf.remaining() < size {
             return Err(EncodingError::NotEnoughData);
