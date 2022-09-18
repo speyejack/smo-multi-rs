@@ -15,7 +15,8 @@ impl FromStr for Guid {
     type Err = EncodingError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let id = <[u8; 16]>::from_hex(s)?;
+        let str_rep = s.replace("-", "");
+        let id = <[u8; 16]>::from_hex(str_rep)?;
         Ok(id.into())
     }
 }
@@ -23,7 +24,7 @@ impl FromStr for Guid {
 impl Display for Guid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for (i, digit) in self.id.iter().enumerate() {
-            write!(f, "{:x}", digit)?;
+            write!(f, "{:02x}", digit)?;
             match i {
                 4 | 6 | 8 | 10 => write!(f, "-")?,
                 _ => {}
