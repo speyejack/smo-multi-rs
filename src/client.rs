@@ -358,14 +358,6 @@ impl Client {
         ))
         .await?;
 
-        let local_udp_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), udp_port);
-        let udp = UdpSocket::bind(local_udp_addr).await?;
-        let local_udp_addr = udp.local_addr().expect("Failed to unwrap udp port");
-        tracing::debug!("Binding udp to: {:?}", local_udp_addr);
-
-        tracing::debug!("setting new udp connection");
-        let udp_conn = UdpConnection::new(udp, tcp_sock_addr.ip());
-
         tracing::debug!("Waiting for reply");
         let connect = conn.read_packet().await?;
 
@@ -378,6 +370,14 @@ impl Client {
                     name: name.clone(),
                     ..PlayerData::default()
                 };
+
+                let local_udp_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), udp_port);
+                let udp = UdpSocket::bind(local_udp_addr).await?;
+                let local_udp_addr = udp.local_addr().expect("Failed to unwrap udp port");
+                tracing::debug!("Binding udp to: {:?}", local_udp_addr);
+
+                tracing::debug!("setting new udp connection");
+                let udp_conn = UdpConnection::new(udp, tcp_sock_addr.ip());
 
                 if start_udp_handshake {
                     tracing::debug!("Starting udp handshake");
@@ -409,6 +409,8 @@ impl Client {
                     recv_broadcast,
                 };
 
+                tracing::debug!("Initialized player");
+
                 Ok(Command::Server(ServerCommand::NewPlayer {
                     cli: client,
                     connect_packet: Box::new(connect),
@@ -417,7 +419,6 @@ impl Client {
             }
             _ => Err(SMOError::ClientInit(ClientInitError::BadHandshake)),
         }?;
-        tracing::debug!("Initialized player");
 
         to_coord.send(new_player).await?;
         Ok(())
