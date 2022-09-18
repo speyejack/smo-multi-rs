@@ -5,6 +5,7 @@ use crate::{
         ClientCommand, Command, ConsoleCommand, ServerCommand, ServerWideCommand,
     },
     guid::Guid,
+    json_api::JsonApi,
     net::{ConnectionType, Packet, PacketData, TagUpdate},
     player_holder::{ClientChannel, PlayerHolder, PlayerInfo, PlayerSelect},
     settings::{load_settings, save_settings, SyncSettings},
@@ -78,6 +79,10 @@ impl Coordinator {
             Command::Server(sc) => match sc {
                 ServerCommand::NewPlayer { .. } => self.add_client(sc).await?,
                 ServerCommand::DisconnectPlayer { guid } => self.disconnect_player(guid).await?,
+                ServerCommand::JsonApi { conn, json } => {
+                    JsonApi::handle(&self.settings, &self.players.clients, conn, json).await?;
+                    return Ok(true);
+                },
             },
             Command::Packet(packet) => {
                 match &packet.data {

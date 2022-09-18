@@ -419,6 +419,12 @@ impl Client {
                     comm: to_cli,
                 }))
             }
+            PacketData::JsonApi { json } => {
+                Ok(Command::Server(ServerCommand::JsonApi {
+                    json: json,
+                    conn: conn,
+                }))
+            }
             _ => Err(SMOError::ClientInit(ClientInitError::BadHandshake)),
         }?;
 

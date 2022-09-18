@@ -3,6 +3,7 @@ pub mod cmds;
 pub mod console;
 pub mod coordinator;
 pub mod guid;
+pub mod json_api;
 pub mod listener;
 pub mod net;
 pub mod player_holder;

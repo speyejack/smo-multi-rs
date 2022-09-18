@@ -3,6 +3,7 @@ mod cmds;
 mod console;
 mod coordinator;
 mod guid;
+mod json_api;
 mod listener;
 mod net;
 mod player_holder;
