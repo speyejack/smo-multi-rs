@@ -18,6 +18,7 @@ use tokio::{
     sync::{mpsc, RwLock},
     time::timeout,
 };
+use tracing_subscriber::EnvFilter;
 
 struct MockClient {
     pub guid: Guid,
@@ -105,6 +106,10 @@ impl MockClient {
 // #[ignore = "Only used testing mock"]
 #[tokio::test]
 async fn replay_server() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
     let settings = Arc::new(RwLock::new(Settings::default()));
     let (to_coord, from_clients) = mpsc::channel(100);
 
