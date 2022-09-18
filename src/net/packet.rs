@@ -305,6 +305,7 @@ where
             13 => PacketData::UdpInit {
                 port: buf.get_u16_le(),
             },
+            14 => PacketData::HolePunch {},
             _ => PacketData::Unhandled {
                 tag: p_type,
                 data: buf.copy_to_bytes(p_size.into())[..].to_vec(),
@@ -487,6 +488,7 @@ impl Arbitrary for Packet {
             11 => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
             12 => 0,
             13 => 2,
+            14 => 0,
             _ => 0,
         };
 
