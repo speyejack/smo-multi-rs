@@ -6,4 +6,5 @@ pub mod listener;
 pub mod net;
 pub mod server;
 pub mod settings;
+pub mod test;
 pub mod types;

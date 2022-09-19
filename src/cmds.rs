@@ -1,8 +1,4 @@
-use crate::{
-    client::Client,
-    guid::Guid,
-    net::{Packet},
-};
+use crate::{client::Client, guid::Guid, net::Packet};
 use std::{convert::Infallible, str::FromStr};
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -28,6 +24,7 @@ pub enum ServerCommand {
     Shutdown,
 }
 
+// Call this console
 #[derive(Parser, Debug)]
 pub struct Cli {
     #[clap(subcommand)]
