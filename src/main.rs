@@ -21,15 +21,10 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing::info!("Starting server");
+    tracing::info!("Creating server");
     let server = create_server();
-    let settings = server.settings.read().await;
-    let bind_addr = SocketAddr::new(settings.server.address, settings.server.port);
-    tracing::info!("Binding tcp port to {}", bind_addr);
-
-    drop(settings);
-    tracing::info!("Server ready");
-    server.spawn_minimal_server(bind_addr).await
+    tracing::info!("Starting server");
+    server.spawn_minimal_server().await
 }
 
 fn read_settings() -> Result<Settings> {
@@ -84,7 +79,7 @@ mod test {
     async fn client_connect() -> Result<()> {
         let addr = "127.0.0.1:61884".parse().unwrap();
         let (to_coord, server, coordinator) = create_server();
-        let serv_task = tokio::task::spawn(server.listen_for_clients(addr));
+        let serv_task = tokio::task::spawn(server.listen_for_clients());
         let coord_task = tokio::task::spawn(coordinator.handle_commands());
 
         let client = tokio::spawn(async move { fake_client(addr).await });

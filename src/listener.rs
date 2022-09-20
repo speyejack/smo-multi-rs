@@ -7,12 +7,16 @@ use crate::{client::Client, cmds::Command, settings::SyncSettings};
 pub struct Listener {
     pub to_coord: mpsc::Sender<Command>,
     pub settings: SyncSettings,
+    pub tcp_bind_addr: SocketAddr,
     pub udp_port: u16,
 }
 
 impl Listener {
-    pub async fn listen_for_clients(self, addr: SocketAddr) -> Result<()> {
-        let listener = TcpListener::bind(addr).await?;
+    pub async fn listen_for_clients(mut self) -> Result<()> {
+        let listener = TcpListener::bind(self.tcp_bind_addr).await?;
+        self.tcp_bind_addr = listener.local_addr().unwrap();
+        tracing::info!("Binding tcp port to {}", self.tcp_bind_addr);
+
         let base_udp_port = self.udp_port;
         let mut udp_offset = 0;
 

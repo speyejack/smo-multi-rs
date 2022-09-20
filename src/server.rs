@@ -27,11 +27,14 @@ impl Server {
     pub fn build_server(settings: Settings) -> Server {
         let (to_coord, from_clients) = mpsc::channel(100);
 
+        let local_bind_addr = SocketAddr::new(settings.server.address, settings.server.port);
+
         let settings = Arc::new(RwLock::new(settings));
 
         let listener = Listener {
             settings: settings.clone(),
             to_coord: to_coord.clone(),
+            tcp_bind_addr: local_bind_addr,
             udp_port: 51888,
         };
 
@@ -50,21 +53,25 @@ impl Server {
         }
     }
 
-    pub async fn spawn_minimal_server(self, bind_addr: SocketAddr) -> Result<()> {
-        let serv_task = tokio::task::spawn(self.listener.listen_for_clients(bind_addr));
+    pub async fn spawn_minimal_server(self) -> Result<()> {
+        let serv_task = tokio::task::spawn(self.listener.listen_for_clients());
         let coord_task = tokio::task::spawn(self.coord.handle_commands());
 
         let _result = tokio::join!(serv_task, coord_task);
         Ok(())
     }
 
-    pub async fn spawn_full_server(self, bind_addr: SocketAddr) -> Result<()> {
-        let serv_task = tokio::task::spawn(self.listener.listen_for_clients(bind_addr));
+    pub async fn spawn_full_server(self) -> Result<()> {
+        let serv_task = tokio::task::spawn(self.listener.listen_for_clients());
         let coord_task = tokio::task::spawn(self.coord.handle_commands());
         let parser_task = tokio::task::spawn(parse_commands(self.to_coord.clone()));
 
         let _results = tokio::join!(serv_task, coord_task, parser_task);
         Ok(())
+    }
+
+    pub fn get_bind_addr(&self) -> SocketAddr {
+        self.listener.tcp_bind_addr
     }
 }
 
