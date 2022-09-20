@@ -9,8 +9,8 @@ use crate::net::PacketData;
 use crate::settings::SyncSettings;
 use crate::types::ClientInitError;
 use crate::types::ErrorSeverity;
+use crate::types::Result;
 use crate::types::{Costume, SMOError};
-use crate::types::{EncodingError, Result};
 use std::collections::HashSet;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
@@ -180,18 +180,6 @@ impl Client {
         }
 
         Ok(())
-    }
-
-    pub async fn recv_packet(&mut self) -> Result<Packet> {
-        self.conn.read_packet().await
-    }
-
-    fn parse_packet(&mut self) -> Result<Packet> {
-        match self.conn.parse_packet() {
-            Err(e) => Err(e),
-            Ok(Some(t)) => Ok(t),
-            Ok(None) => Err(EncodingError::NotEnoughData.into()),
-        }
     }
 
     async fn handle_command(&mut self, command: Command) -> Result<()> {

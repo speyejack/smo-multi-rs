@@ -431,17 +431,6 @@ where
                 buf.put_i8(*scenerio);
                 buf.put_u8(*sub_scenario);
             }
-            PacketData::ChangeStage {
-                stage,
-                id,
-                scenerio,
-                sub_scenario,
-            } => {
-                buf.put_slice(&str_to_sized_array::<STAGE_CHANGE_NAME_SIZE>(stage));
-                buf.put_slice(&str_to_sized_array::<STAGE_ID_SIZE>(id));
-                buf.put_i8(*scenerio);
-                buf.put_u8(*sub_scenario);
-            }
             PacketData::Command => {}
             PacketData::UdpInit { port } => {
                 buf.put_u16_le(*port);
