@@ -1,25 +1,6 @@
-use std::{
-    collections::{HashMap, HashSet},
-    net::{IpAddr, SocketAddr},
-    str::FromStr,
-    sync::Arc,
-    time::Duration,
-};
+use std::time::Duration;
 
-use smoo::{
-    coordinator::Coordinator,
-    guid::Guid,
-    listener::Listener,
-    net::{connection::Connection, udp_conn::UdpConnection, ConnectionType, Packet, PacketData},
-    settings::Settings,
-    test::mockclient::MockClient,
-};
-use tokio::{
-    net::{TcpStream, UdpSocket},
-    select,
-    sync::{mpsc, RwLock},
-    time::timeout,
-};
+use smoo::{server::Server, settings::Settings, test::mockclient::MockClient};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -34,31 +15,19 @@ async fn main() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let settings = Arc::new(RwLock::new(Settings::default()));
-    let (to_coord, from_clients) = mpsc::channel(100);
+    let mut settings = Settings::default();
+    settings.server.port = 1029;
 
-    let server = Listener {
-        settings: settings.clone(),
-        to_coord: to_coord.clone(),
-        udp_port: 51888,
-    };
-
-    let coordinator = Coordinator {
-        shine_bag: Arc::new(RwLock::new(HashSet::default())),
-        from_clients,
-        settings,
-        clients: HashMap::new(),
-    };
-
-    let serv_task = tokio::task::spawn(server.listen_for_clients("0.0.0.0:1029".parse().unwrap()));
-    let coord_task = tokio::task::spawn(coordinator.handle_commands());
+    let server = Server::build_server(settings);
+    let bind_addr = server.get_bind_addr();
+    let serv_task = tokio::task::spawn(server.spawn_minimal_server());
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let mock_client = MockClient::connect("127.0.0.1:1029".parse().unwrap()).await;
+    let mock_client = MockClient::connect(bind_addr).await;
     let target_guid = [
         126, 128, 87, 52, 186, 45, 0, 16, 175, 237, 95, 234, 197, 104, 21, 75,
     ];
-    let cli_task = tokio::task::spawn(mock_client.replay_player(target_guid.into()));
 
-    let _ = tokio::join!(serv_task, coord_task, cli_task);
+    let cli_task = tokio::task::spawn(mock_client.replay_player(target_guid.into()));
+    let (_, _) = tokio::join!(serv_task, cli_task);
 }
