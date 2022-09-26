@@ -5,6 +5,8 @@ use smoo::guid::Guid;
 use smoo::net::encoding::{Decodable, Encodable};
 use smoo::net::{Packet, PacketData, TagUpdate};
 
+// Used to test any bad packet decodes
+#[ignore]
 #[test_log::test]
 fn bad_data_packet() {
     let bad_data = b"~\x80W4\xba-\0\x10\xaf\xed_\xea\xc5h\x15K\x03\0P\00v\xa5E\0\0\xf0B\xa1R\x9fE\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x01FlyingWaitR\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\xccL>";
@@ -30,6 +32,8 @@ fn bad_data_packet() {
     assert_eq!(bad_packet, decode)
 }
 
+// Used to test any bad packet round trip issues
+#[ignore]
 #[test_log::test]
 fn bad_packet() {
     let mut bad_packet = Packet {
