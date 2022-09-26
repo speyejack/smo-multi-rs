@@ -457,8 +457,10 @@ fn buf_size_to_string(buf: &mut impl Buf, size: usize) -> Result<String> {
 
 #[cfg(test)]
 mod test {
+
     use super::*;
-    use quickcheck::Arbitrary;
+    use quickcheck::{quickcheck, Arbitrary};
+
     impl Arbitrary for Packet {
         fn arbitrary(g: &mut quickcheck::Gen) -> Self {
             let options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
@@ -468,13 +470,13 @@ mod test {
             let size = match enum_num {
                 1 => 2,
                 2 => 0x38,
-                3 => 0x50,
-                4 => 0x42,
-                5 => 6,
-                6 => 6 + CLIENT_NAME_SIZE + 2,
+                3 => 29 + CAP_ANIM_SIZE,
+                4 => 2 + STAGE_GAME_NAME_SIZE,
+                5 => 5,
+                6 => 6 + CLIENT_NAME_SIZE,
                 7 => 0,
                 8 => COSTUME_NAME_SIZE * 2,
-                9 => 4,
+                9 => 5,
                 10 => COSTUME_NAME_SIZE,
                 11 => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
                 12 => 0,
@@ -492,7 +494,17 @@ mod test {
                 buff.put_u8(u8::arbitrary(g) % 128);
             }
 
-            Packet::decode(&mut Cursor::new(buff)).unwrap()
+            let mut packet = Packet::decode(&mut Cursor::new(buff)).unwrap();
+            packet.resize();
+            packet
+        }
+    }
+
+    quickcheck! {
+        fn round_trip(p: Packet) -> bool {
+            let mut buff = BytesMut::with_capacity(1000);
+
+            p.encode(&mut buff).map(|_| Packet::decode(&mut buff).map(|de_p| de_p == p).unwrap_or(false)).unwrap_or(false)
         }
     }
 }
