@@ -37,7 +37,7 @@ impl MockClient {
             .expect("Couldn't bind udp port");
         let udp = UdpConnection::new(udp_sock, "127.0.0.1".parse().unwrap());
 
-        let init_packet = timeout(Duration::from_millis(1), tcp.read_packet())
+        let init_packet = timeout(Duration::from_millis(100), tcp.read_packet())
             .await
             .expect("Init packet timed out")
             .expect("Init packet recv failed");
