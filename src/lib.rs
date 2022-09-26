@@ -1,5 +1,6 @@
 pub mod client;
 pub mod cmds;
+pub mod console;
 pub mod coordinator;
 pub mod guid;
 pub mod listener;

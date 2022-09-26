@@ -1,5 +1,4 @@
 use crate::{
-    cmds::Cli,
     console::parse_commands,
     coordinator::Coordinator,
     listener::Listener,
