@@ -24,14 +24,8 @@ pub enum ServerCommand {
     Shutdown,
 }
 
-// Call this console
-#[derive(Parser, Debug)]
-pub struct Cli {
-    #[clap(subcommand)]
-    pub cmd: CliCommand,
-}
-
 #[derive(Subcommand, Debug, Clone)]
+#[clap(rename_all = "lower")]
 pub enum CliCommand {
     SendAll {
         stage: String,
@@ -67,11 +61,13 @@ pub enum CliCommand {
 }
 
 #[derive(Subcommand, Debug, Clone)]
+#[clap(rename_all = "lower")]
 pub enum ScenarioCommand {
     Merge { enabled: Option<bool> },
 }
 
 #[derive(Subcommand, Debug, Clone)]
+#[clap(rename_all = "lower")]
 pub enum TagCommand {
     Time {
         player: PlayerSelect,
@@ -89,6 +85,7 @@ pub enum TagCommand {
 }
 
 #[derive(Subcommand, Debug, Clone)]
+#[clap(rename_all = "lower")]
 pub enum FlipCommand {
     List,
     Add { player: Guid },
@@ -98,6 +95,7 @@ pub enum FlipCommand {
 }
 
 #[derive(Subcommand, Debug, Clone)]
+#[clap(rename_all = "lower")]
 pub enum ShineCommand {
     List,
     Clear,
@@ -124,6 +122,7 @@ impl FromStr for PlayerSelect {
 }
 
 #[derive(ValueEnum, Clone, Debug)]
+#[clap(rename_all = "lower")]
 pub enum FlipValues {
     Both,
     Player,

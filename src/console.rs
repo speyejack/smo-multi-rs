@@ -6,6 +6,13 @@ use clap::Parser;
 use std::io::Write;
 use tokio::sync::mpsc;
 
+// Call this console
+#[derive(Parser, Debug)]
+pub struct Cli {
+    #[clap(subcommand)]
+    pub cmd: CliCommand,
+}
+
 pub async fn parse_commands(mut to_coord: mpsc::Sender<Command>) -> Result<()> {
     loop {
         let command_result = parse_command(&mut to_coord).await;
