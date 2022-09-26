@@ -8,7 +8,7 @@ pub struct Listener {
     pub to_coord: mpsc::Sender<Command>,
     pub settings: SyncSettings,
     pub tcp_bind_addr: SocketAddr,
-    pub udp_port: u16,
+    pub udp_port_addrs: Option<(u16, u16)>,
     pub listener: Option<TcpListener>,
 }
 
@@ -27,7 +27,7 @@ impl Listener {
         let listener = self.listener.unwrap();
         tracing::info!("Binding tcp port to {}", self.tcp_bind_addr);
 
-        let base_udp_port = self.udp_port;
+        let udp_port_data = self.udp_port_addrs.unwrap_or((0, 1));
         let mut udp_offset = 0;
 
         loop {
@@ -45,9 +45,9 @@ impl Listener {
 
             let to_coord = self.to_coord.clone();
             let settings = self.settings.clone();
-            let udp_port = base_udp_port + udp_offset;
+            let udp_port = udp_port_data.0 + udp_offset;
             udp_offset += 1;
-            udp_offset %= 32;
+            udp_offset %= udp_port_data.1;
 
             tracing::info!("New client attempting to connect");
 

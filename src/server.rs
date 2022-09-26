@@ -35,7 +35,7 @@ impl Server {
             settings: settings.clone(),
             to_coord: to_coord.clone(),
             tcp_bind_addr: local_bind_addr,
-            udp_port: 51888,
+            udp_port_addrs: Some((51888, 32)),
             listener: None,
         };
 
