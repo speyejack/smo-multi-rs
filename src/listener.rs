@@ -9,12 +9,22 @@ pub struct Listener {
     pub settings: SyncSettings,
     pub tcp_bind_addr: SocketAddr,
     pub udp_port: u16,
+    pub listener: Option<TcpListener>,
 }
 
 impl Listener {
-    pub async fn listen_for_clients(mut self) -> Result<()> {
+    pub async fn bind_address(&mut self) -> Result<()> {
         let listener = TcpListener::bind(self.tcp_bind_addr).await?;
         self.tcp_bind_addr = listener.local_addr().unwrap();
+        self.listener = Some(listener);
+        Ok(())
+    }
+
+    pub async fn listen_for_clients(mut self) -> Result<()> {
+        if self.listener.is_none() {
+            self.bind_address().await?;
+        }
+        let listener = self.listener.unwrap();
         tracing::info!("Binding tcp port to {}", self.tcp_bind_addr);
 
         let base_udp_port = self.udp_port;

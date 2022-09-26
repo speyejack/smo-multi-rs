@@ -36,6 +36,7 @@ impl Server {
             to_coord: to_coord.clone(),
             tcp_bind_addr: local_bind_addr,
             udp_port: 51888,
+            listener: None,
         };
 
         let coord = Coordinator {
@@ -51,6 +52,10 @@ impl Server {
             listener,
             coord,
         }
+    }
+
+    pub async fn bind_addresses(&mut self) -> Result<()> {
+        self.listener.bind_address().await
     }
 
     pub async fn spawn_minimal_server(self) -> Result<()> {
