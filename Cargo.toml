@@ -32,6 +32,8 @@ futures = "0.3.23"
 
 [dev-dependencies]
 quickcheck = "1.0.3"
+test-log = {version="0.2.11", default-features=false, features=["trace"]}
+
 [workspace]
 members = [
 		"examples/proxy",
