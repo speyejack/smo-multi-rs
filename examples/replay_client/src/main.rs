@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use smoo::{server::Server, settings::Settings, test::mockclient::MockClient};
+use smoo::{guid::Guid, server::Server, settings::Settings, test::mockclient::MockClient};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -23,7 +23,7 @@ async fn main() {
     let serv_task = tokio::task::spawn(server.spawn_minimal_server());
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    let mock_client = MockClient::connect(bind_addr).await;
+    let mock_client = MockClient::simple_connect(bind_addr).await;
     let target_guid = [
         126, 128, 87, 52, 186, 45, 0, 16, 175, 237, 95, 234, 197, 104, 21, 75,
     ];

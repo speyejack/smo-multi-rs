@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{fmt::Debug, net::SocketAddr, str::FromStr, time::Duration};
 
 use crate::{
     guid::Guid,
@@ -16,8 +16,18 @@ pub struct MockClient {
 }
 
 impl MockClient {
-    pub async fn connect(serv_ip: SocketAddr) -> Self {
-        let guid = Guid::from_str("1000000000-2000-3000-4000-5000000000").unwrap();
+    pub async fn simple_connect(serv_ip: SocketAddr) -> Self {
+        Self::connect(serv_ip, "1000000000-2000-3000-4000-5000000000", "Mock").await
+    }
+
+    pub async fn connect<G, S>(serv_ip: SocketAddr, guid: G, name: S) -> Self
+    where
+        S: Into<String>,
+        G: TryInto<Guid>,
+        <G as TryInto<Guid>>::Error: Debug,
+    {
+        let guid = guid.try_into().unwrap();
+        tracing::debug!("Starting mock client: {}", guid);
         let tcp_stream = TcpStream::connect(serv_ip)
             .await
             .expect("TCP Stream creation failed");
@@ -40,7 +50,7 @@ impl MockClient {
         let data = PacketData::Connect {
             c_type: ConnectionType::FirstConnection,
             max_player: u16::MAX,
-            client_name: "Mock".to_string(),
+            client_name: name.into(),
         };
 
         let connect_packet = Packet::new(guid, data);
