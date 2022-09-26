@@ -6,7 +6,6 @@ use crate::{
     types::{Costume, EncodingError, Quaternion, Vector3},
 };
 use bytes::{Buf, BufMut, BytesMut};
-use quickcheck::Arbitrary;
 
 type Result<T> = std::result::Result<T, EncodingError>;
 
@@ -456,39 +455,44 @@ fn buf_size_to_string(buf: &mut impl Buf, size: usize) -> Result<String> {
         .to_string())
 }
 
-impl Arbitrary for Packet {
-    fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-        let options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
-        let mut buff = BytesMut::with_capacity(MAX_PACKET_SIZE);
+#[cfg(test)]
+mod test {
+    use super::*;
+    use quickcheck::Arbitrary;
+    impl Arbitrary for Packet {
+        fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+            let options = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+            let mut buff = BytesMut::with_capacity(MAX_PACKET_SIZE);
 
-        let enum_num = g.choose(&options).unwrap();
-        let size = match enum_num {
-            1 => 2,
-            2 => 0x38,
-            3 => 0x50,
-            4 => 0x42,
-            5 => 6,
-            6 => 6 + CLIENT_NAME_SIZE + 2,
-            7 => 0,
-            8 => COSTUME_NAME_SIZE * 2,
-            9 => 4,
-            10 => COSTUME_NAME_SIZE,
-            11 => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
-            12 => 0,
-            13 => 2,
-            14 => 0,
-            _ => 0,
-        };
+            let enum_num = g.choose(&options).unwrap();
+            let size = match enum_num {
+                1 => 2,
+                2 => 0x38,
+                3 => 0x50,
+                4 => 0x42,
+                5 => 6,
+                6 => 6 + CLIENT_NAME_SIZE + 2,
+                7 => 0,
+                8 => COSTUME_NAME_SIZE * 2,
+                9 => 4,
+                10 => COSTUME_NAME_SIZE,
+                11 => STAGE_ID_SIZE + STAGE_CHANGE_NAME_SIZE + 2,
+                12 => 0,
+                13 => 2,
+                14 => 0,
+                _ => 0,
+            };
 
-        for _ in 0..16 {
-            buff.put_u8(u8::arbitrary(g));
+            for _ in 0..16 {
+                buff.put_u8(u8::arbitrary(g));
+            }
+            buff.put_u16_le(*enum_num);
+            buff.put_u16_le(size as u16);
+            for _ in 0..size {
+                buff.put_u8(u8::arbitrary(g) % 128);
+            }
+
+            Packet::decode(&mut Cursor::new(buff)).unwrap()
         }
-        buff.put_u16_le(*enum_num);
-        buff.put_u16_le(size as u16);
-        for _ in 0..size {
-            buff.put_u8(u8::arbitrary(g) % 128);
-        }
-
-        Packet::decode(&mut Cursor::new(buff)).unwrap()
     }
 }
