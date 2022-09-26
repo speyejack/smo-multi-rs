@@ -11,6 +11,14 @@ pub struct Guid {
     pub id: [u8; 16],
 }
 
+impl TryFrom<&str> for Guid {
+    type Error = EncodingError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::from_str(value)
+    }
+}
+
 impl FromStr for Guid {
     type Err = EncodingError;
 
