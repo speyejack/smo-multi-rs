@@ -14,9 +14,9 @@ pub enum SMOError {
 
     #[error("Invalid encoding: {0}")]
     Encoding(#[from] EncodingError),
-    #[error("Bad IO")]
+    #[error("Bad IO: {0}")]
     Io(#[from] std::io::Error),
-    #[error("Bad cli parsing")]
+    #[error("{0}")]
     Clap(#[from] clap::Error),
     #[error("Sending channel error")]
     SendChannel(#[from] Box<SendError<Command>>),
@@ -30,6 +30,8 @@ pub enum SMOError {
     JsonError(#[from] serde_json::Error),
     #[error("Udp not initialized")]
     UdpNotInit,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 impl From<SendError<Command>> for SMOError {
