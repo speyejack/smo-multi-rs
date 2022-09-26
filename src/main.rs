@@ -1,5 +1,6 @@
 mod client;
 mod cmds;
+mod console;
 mod coordinator;
 mod guid;
 mod listener;
@@ -24,7 +25,7 @@ async fn main() -> Result<()> {
     tracing::info!("Creating server");
     let server = create_server();
     tracing::info!("Starting server");
-    server.spawn_minimal_server().await
+    server.spawn_full_server().await
 }
 
 fn read_settings() -> Result<Settings> {
