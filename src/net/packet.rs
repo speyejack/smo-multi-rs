@@ -220,7 +220,7 @@ where
         let p_size = buf.get_u16_le();
 
         if buf.remaining() < p_size.into() {
-            tracing::trace!("data size failed");
+            tracing::trace!("data size failed: {} < {}", buf.remaining(), p_size);
             return Err(EncodingError::NotEnoughData);
         }
 
