@@ -1,6 +1,6 @@
 use crate::{
     client::SyncPlayer,
-    cmds::{Command, ServerCommand},
+    cmds::{Command, ConsoleCommand, ServerCommand},
     guid::Guid,
     net::{ConnectionType, Packet, PacketData},
     settings::SyncSettings,
@@ -117,7 +117,7 @@ impl Coordinator {
                 };
                 self.broadcast(packet).await?;
             }
-            Command::Cli(_) => todo!(),
+            Command::Console(_) => todo!(),
         }
         Ok(true)
     }
