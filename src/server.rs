@@ -5,10 +5,9 @@ use crate::{
     settings::{Settings, SyncSettings},
     types::Result,
 };
-use clap::Parser;
+
 use std::{
     collections::{HashMap, HashSet},
-    io::Write,
     net::SocketAddr,
     sync::Arc,
 };

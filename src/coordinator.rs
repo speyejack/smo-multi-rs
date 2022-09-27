@@ -1,6 +1,6 @@
 use crate::{
     client::SyncPlayer,
-    cmds::{Command, ConsoleCommand, ServerCommand},
+    cmds::{Command, ServerCommand},
     guid::Guid,
     net::{ConnectionType, Packet, PacketData},
     settings::SyncSettings,

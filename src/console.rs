@@ -1,6 +1,6 @@
 use crate::{
     cmds::{Command, ConsoleCommand},
-    types::{Result, SMOError},
+    types::{Result},
 };
 use clap::Parser;
 use std::io::Write;

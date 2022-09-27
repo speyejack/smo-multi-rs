@@ -1,4 +1,4 @@
-use std::{fmt::Debug, net::SocketAddr, str::FromStr, time::Duration};
+use std::{fmt::Debug, net::SocketAddr, time::Duration};
 
 use crate::{
     guid::Guid,
@@ -79,18 +79,18 @@ impl MockClient {
             match p.data {
                 PacketData::Player { .. } | PacketData::Cap { .. } => self
                     .udp
-                    .write_packet(&p)
+                    .write_packet(p)
                     .await
                     .expect("Failed to send udp packet"),
                 _ => self
                     .tcp
-                    .write_packet(&p)
+                    .write_packet(p)
                     .await
                     .expect("Failed to send tcp packet"),
             }
         } else {
             self.tcp
-                .write_packet(&p)
+                .write_packet(p)
                 .await
                 .expect("Failed to send packet");
         }

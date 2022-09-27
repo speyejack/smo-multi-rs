@@ -23,7 +23,7 @@ impl FromStr for Guid {
     type Err = EncodingError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let str_rep = s.replace("-", "");
+        let str_rep = s.replace('-', "");
         let id = <[u8; 16]>::from_hex(str_rep)?;
         Ok(id.into())
     }

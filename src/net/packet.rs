@@ -5,7 +5,7 @@ use crate::{
     guid::Guid,
     types::{Costume, EncodingError, Quaternion, Vector3},
 };
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut};
 
 type Result<T> = std::result::Result<T, EncodingError>;
 
@@ -242,16 +242,13 @@ where
                 act: buf.get_u16_le(),
                 sub_act: buf.get_u16_le(),
             },
-            3 => {
-                let packet = PacketData::Cap {
-                    pos: Vector3::decode(buf)?,
-                    rot: Quaternion::decode(buf)?,
-                    cap_out: buf.get_u8() != 0,
-                    cap_anim: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
-                        .to_string(),
-                };
-                packet
-            }
+            3 => PacketData::Cap {
+                pos: Vector3::decode(buf)?,
+                rot: Quaternion::decode(buf)?,
+                cap_out: buf.get_u8() != 0,
+                cap_anim: std::str::from_utf8(&buf.copy_to_bytes(COSTUME_NAME_SIZE)[..])?
+                    .to_string(),
+            },
             4 => PacketData::Game {
                 is_2d: buf.get_u8() != 0,
                 scenario_num: buf.get_i8(),
@@ -459,6 +456,7 @@ fn buf_size_to_string(buf: &mut impl Buf, size: usize) -> Result<String> {
 mod test {
 
     use super::*;
+    use bytes::BytesMut;
     use quickcheck::{quickcheck, Arbitrary};
 
     impl Arbitrary for Packet {

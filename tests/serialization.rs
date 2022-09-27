@@ -1,6 +1,6 @@
 use bytes::{Buf, BufMut, BytesMut};
 
-use quickcheck::quickcheck;
+
 use smoo::guid::Guid;
 use smoo::net::encoding::{Decodable, Encodable};
 use smoo::net::{Packet, PacketData, TagUpdate};
@@ -24,7 +24,7 @@ fn bad_data_packet() {
     println!("Buff len {}", buff.len());
     bad_packet.encode(&mut buff).unwrap();
 
-    let mut buff = buff.freeze();
+    let buff = buff.freeze();
     // println!("C: {}", buff.get_u8());
     println!("Buff decode: {:?} ({})", buff, buff.len());
     let decode = Packet::decode(&mut (&buff[..])).unwrap();

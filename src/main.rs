@@ -16,7 +16,6 @@ use settings::Settings;
 use std::{
     fs::File,
     io::{BufReader, BufWriter},
-    net::SocketAddr,
 };
 use tracing_subscriber::EnvFilter;
 
