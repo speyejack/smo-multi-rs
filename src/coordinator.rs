@@ -1,6 +1,6 @@
 use crate::{
     client::SyncPlayer,
-    cmds::{Command, ServerCommand},
+    cmds::{ClientCommand, Command, ServerCommand},
     guid::Guid,
     net::{ConnectionType, Packet, PacketData},
     settings::SyncSettings,
@@ -15,11 +15,12 @@ use std::{
 use tokio::sync::{mpsc, RwLock};
 use tracing::{info_span, Instrument};
 type SyncShineBag = Arc<RwLock<HashSet<i32>>>;
+type ClientChannel = mpsc::Sender<ClientCommand>;
 
 pub struct Coordinator {
     pub shine_bag: SyncShineBag,
     pub settings: SyncSettings,
-    pub clients: HashMap<Guid, (mpsc::Sender<Command>, SyncPlayer)>,
+    pub clients: HashMap<Guid, (ClientChannel, SyncPlayer)>,
     pub from_clients: mpsc::Receiver<Command>,
 }
 
@@ -135,7 +136,7 @@ impl Coordinator {
                 _ => {}
             }
 
-            channel.send(Command::Packet(packet)).await?;
+            channel.send(ClientCommand::Packet(packet)).await?;
         }
         Ok(())
     }
@@ -152,7 +153,7 @@ impl Coordinator {
             .ok_or(SMOError::InvalidID(*id))
     }
 
-    fn get_channel(&self, id: &Guid) -> std::result::Result<&mpsc::Sender<Command>, SMOError> {
+    fn get_channel(&self, id: &Guid) -> std::result::Result<&ClientChannel, SMOError> {
         self.clients
             .get(id)
             .map(|x| &x.0)
@@ -233,7 +234,7 @@ impl Coordinator {
         Ok(())
     }
 
-    async fn setup_player(&mut self, comm: mpsc::Sender<Command>, packet: Packet) -> Result<()> {
+    async fn setup_player(&mut self, comm: ClientChannel, packet: Packet) -> Result<()> {
         tracing::debug!(
             "Setting up player ({}) with {} other players",
             packet.id,
@@ -263,11 +264,11 @@ impl Coordinator {
 
             drop(other_cli);
 
-            comm.send(Command::Packet(connect_packet)).await?;
-            comm.send(Command::Packet(costume_packet)).await?;
+            comm.send(ClientCommand::Packet(connect_packet)).await?;
+            comm.send(ClientCommand::Packet(costume_packet)).await?;
 
             if let Some(p) = last_game_packet {
-                comm.send(Command::Packet(p)).await?;
+                comm.send(ClientCommand::Packet(p)).await?;
             }
         }
 
@@ -279,7 +280,7 @@ impl Coordinator {
         if let Some((comm, _)) = self.clients.remove(&guid) {
             let packet = Packet::new(guid, PacketData::Disconnect);
             self.broadcast(packet.clone()).await?;
-            let disconnect = Command::Packet(packet);
+            let disconnect = ClientCommand::Packet(packet);
             comm.send(disconnect).await?;
         }
 
@@ -303,7 +304,7 @@ impl Coordinator {
     async fn broadcast(&mut self, mut p: Packet) -> Result<()> {
         p.resize();
         for (cli, _) in &mut self.clients.values() {
-            cli.send(Command::Packet(p.clone())).await?;
+            cli.send(ClientCommand::Packet(p.clone())).await?;
         }
         Ok(())
     }
@@ -317,7 +318,7 @@ impl Coordinator {
 }
 
 async fn client_sync_shines(
-    to_client: mpsc::Sender<Command>,
+    to_client: ClientChannel,
     shine_bag: SyncShineBag,
     guid: &Guid,
     player: &SyncPlayer,
@@ -332,7 +333,7 @@ async fn client_sync_shines(
 
     for shine_id in mismatch {
         to_client
-            .send(Command::Packet(Packet::new(
+            .send(ClientCommand::Packet(Packet::new(
                 *guid,
                 PacketData::Shine {
                     shine_id: *shine_id,

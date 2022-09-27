@@ -1,6 +1,9 @@
 use std::{num::TryFromIntError, str::Utf8Error};
 
-use crate::{cmds::Command, guid::Guid};
+use crate::{
+    cmds::{ClientCommand, Command},
+    guid::Guid,
+};
 use hex::FromHexError;
 use serde::{de::Error as DeError, ser::Error as SerError};
 use thiserror::*;
@@ -20,6 +23,8 @@ pub enum SMOError {
     Clap(#[from] clap::Error),
     #[error("Sending channel error")]
     SendChannel(#[from] Box<SendError<Command>>),
+    #[error("Sending client channel error")]
+    SendClientChannel(#[from] Box<SendError<ClientCommand>>),
     #[error("Receiving channel error")]
     RecvChannel,
     #[error("Join error")]
@@ -36,6 +41,12 @@ pub enum SMOError {
 
 impl From<SendError<Command>> for SMOError {
     fn from(e: SendError<Command>) -> Self {
+        Box::new(e).into()
+    }
+}
+
+impl From<SendError<ClientCommand>> for SMOError {
+    fn from(e: SendError<ClientCommand>) -> Self {
         Box::new(e).into()
     }
 }

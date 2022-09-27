@@ -1,6 +1,8 @@
+pub mod client;
 pub mod console;
 pub mod coord;
 
+pub use client::ClientCommand;
 pub use console::ConsoleCommand;
 pub use coord::ServerCommand;
 

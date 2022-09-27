@@ -1,3 +1,4 @@
+use crate::cmds::ClientCommand;
 use crate::cmds::Command;
 use crate::cmds::ServerCommand;
 use crate::guid::Guid;
@@ -34,7 +35,7 @@ pub struct Client {
     pub conn: Connection,
     pub udp_conn: UdpConnection,
     pub to_coord: mpsc::Sender<Command>,
-    pub from_server: mpsc::Receiver<Command>,
+    pub from_server: mpsc::Receiver<ClientCommand>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -53,15 +54,9 @@ pub struct PlayerData {
 }
 
 #[derive(Debug)]
-enum Origin {
-    Internal,
-    External,
-}
-
-#[derive(Debug)]
 enum ClientEvent {
-    Packet(Packet),
-    Command(Command),
+    Incoming(Packet),
+    Outgoing(ClientCommand),
 }
 
 impl Client {
@@ -71,9 +66,8 @@ impl Client {
 
             tracing::trace!("Event: {:?}", &event);
             let result = match event {
-                Ok((Origin::External, ClientEvent::Packet(p))) => self.handle_packet(p).await,
-                Ok((Origin::Internal, ClientEvent::Packet(p))) => self.send_packet(&p).await,
-                Ok((_, ClientEvent::Command(c))) => self.handle_command(c).await,
+                Ok(ClientEvent::Incoming(p)) => self.handle_packet(p).await,
+                Ok(ClientEvent::Outgoing(c)) => self.handle_command(c).await,
                 Err(e) => match e.severity() {
                     ErrorSeverity::ClientFatal => {
                         self.alive = false;
@@ -92,16 +86,16 @@ impl Client {
         Ok(())
     }
 
-    async fn read_event(&mut self) -> Result<(Origin, ClientEvent)> {
+    async fn read_event(&mut self) -> Result<ClientEvent> {
         let event = select! {
             packet = self.conn.read_packet() => {
-                (Origin::External, ClientEvent::Packet(packet?))
+                ClientEvent::Incoming(packet?)
             },
             udp_packet = self.udp_conn.read_packet() => {
                 tracing::trace!("Got udp event!");
-                (Origin::External, ClientEvent::Packet(udp_packet?))
+                ClientEvent::Incoming(udp_packet?)
             },
-            command = self.from_server.recv() => (Origin::Internal, ClientEvent::Command(command.ok_or(SMOError::RecvChannel)?)),
+            command = self.from_server.recv() => ClientEvent::Outgoing(command.ok_or(SMOError::RecvChannel)?),
         };
         Ok(event)
     }
@@ -182,9 +176,9 @@ impl Client {
         Ok(())
     }
 
-    async fn handle_command(&mut self, command: Command) -> Result<()> {
+    async fn handle_command(&mut self, command: ClientCommand) -> Result<()> {
         match command {
-            Command::Packet(p) => {
+            ClientCommand::Packet(p) => {
                 if p.id == self.guid {
                     if let crate::net::PacketData::Disconnect = p.data {
                         self.alive = false;
@@ -193,36 +187,37 @@ impl Client {
                     self.send_packet(&p).await?;
                 }
             }
-            _ => todo!(),
+            ClientCommand::SelfAddressed(mut p) => self.readdress_and_send(&mut p).await?,
         }
         Ok(())
     }
 
     pub async fn send_packet(&mut self, packet: &Packet) -> Result<()> {
         // TODO Handle disconnect packets
-        if packet.id != self.guid {
-            tracing::debug!(
-                "Sending packet: {}->{}",
-                packet.id,
-                packet.data.get_type_name()
-            );
-            tracing::debug!("Udp conn: {:?}", self.udp_conn);
+        tracing::debug!(
+            "Sending packet: {}->{}",
+            packet.id,
+            packet.data.get_type_name()
+        );
+        tracing::debug!("Udp conn: {:?}", self.udp_conn);
 
-            if self.udp_conn.is_client_udp() {
-                // Use UDP traffic
-                match packet.data {
-                    PacketData::Player { .. } | PacketData::Cap { .. } => {
-                        self.udp_conn.write_packet(packet).await
-                    }
-                    _ => self.conn.write_packet(packet).await,
+        if self.udp_conn.is_client_udp() {
+            // Use UDP traffic
+            match packet.data {
+                PacketData::Player { .. } | PacketData::Cap { .. } => {
+                    self.udp_conn.write_packet(packet).await
                 }
-            } else {
-                // Fall back to TCP traffic
-                self.conn.write_packet(packet).await
+                _ => self.conn.write_packet(packet).await,
             }
         } else {
-            Ok(())
+            // Fall back to TCP traffic
+            self.conn.write_packet(packet).await
         }
+    }
+
+    pub async fn readdress_and_send(&mut self, p: &mut Packet) -> Result<()> {
+        p.id = self.guid;
+        self.send_packet(p).await
     }
 
     pub async fn initialize_client(
