@@ -1,7 +1,7 @@
 use crate::{
     cmds::ClientCommand,
     console::parse_commands,
-    coordinator::Coordinator,
+    coordinator::{Coordinator, SyncClientNames},
     listener::Listener,
     settings::{Settings, SyncSettings},
     types::Result,
@@ -47,6 +47,7 @@ impl Server {
             from_clients,
             settings: settings.clone(),
             clients: HashMap::new(),
+            client_names: SyncClientNames::default(),
             cli_broadcast: cli_broadcast.clone(),
         };
 

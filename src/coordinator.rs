@@ -15,6 +15,8 @@ use std::{
 };
 use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{info_span, Instrument};
+
+pub type SyncClientNames = Arc<RwLock<HashMap<String, Guid>>>;
 type SyncShineBag = Arc<RwLock<HashSet<i32>>>;
 type ClientChannel = mpsc::Sender<ClientCommand>;
 
@@ -22,6 +24,7 @@ pub struct Coordinator {
     pub shine_bag: SyncShineBag,
     pub settings: SyncSettings,
     pub clients: HashMap<Guid, (ClientChannel, SyncPlayer)>,
+    pub client_names: SyncClientNames,
     pub from_clients: mpsc::Receiver<Command>,
     pub cli_broadcast: broadcast::Sender<ClientCommand>,
 }
@@ -150,6 +153,15 @@ impl Coordinator {
             .ok_or(SMOError::InvalidID(*id))
     }
 
+    async fn get_guid(&self, name: &str) -> std::result::Result<Guid, SMOError> {
+        self.client_names
+            .read()
+            .await
+            .get(name)
+            .map(|x| *x)
+            .ok_or_else(|| SMOError::InvalidName(name.to_string()))
+    }
+
     async fn add_client(&mut self, cmd: ServerCommand) -> Result<()> {
         let (mut cli, packet, comm) = match cmd {
             ServerCommand::NewPlayer {
@@ -209,6 +221,11 @@ impl Coordinator {
                 None => cli.player.clone(),
             },
         };
+
+        let cli_name = cli.player.read().await.name.clone();
+        let cli_guid = cli.guid;
+
+        self.client_names.write().await.insert(cli_name, cli_guid);
         self.clients.insert(id, (comm.clone(), data));
 
         let name = cli.display_name.clone();
@@ -267,7 +284,9 @@ impl Coordinator {
 
     async fn disconnect_player(&mut self, guid: Guid) -> Result<()> {
         tracing::info!("Disconnecting player {}", guid);
-        if let Some((comm, _)) = self.clients.remove(&guid) {
+        if let Some((comm, data)) = self.clients.remove(&guid) {
+            let name = &data.read().await.name;
+            self.client_names.write().await.remove(name);
             let packet = Packet::new(guid, PacketData::Disconnect);
             self.broadcast(packet.clone())?;
             let disconnect = ClientCommand::Packet(packet);

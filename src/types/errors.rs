@@ -17,7 +17,8 @@ pub type Result<T> = std::result::Result<T, SMOError>;
 pub enum SMOError {
     #[error("Invalid id")]
     InvalidID(Guid),
-
+    #[error("Invalid username")]
+    InvalidName(String),
     #[error("Invalid encoding: {0}")]
     Encoding(#[from] EncodingError),
     #[error("Bad IO: {0}")]
