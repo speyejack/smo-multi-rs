@@ -1,13 +1,12 @@
 use crate::{
     client::SyncPlayer,
-    cmds::{ClientCommand, Command, ServerCommand},
+    cmds::{console::PlayerSelect, ClientCommand, Command, ConsoleCommand, ServerCommand},
     guid::Guid,
     net::{ConnectionType, Packet, PacketData},
     settings::SyncSettings,
     types::{ClientInitError, Result, SMOError},
 };
 
-use futures::SinkExt;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -123,7 +122,70 @@ impl Coordinator {
                 };
                 self.broadcast(packet)?;
             }
-            Command::Console(_) => todo!(),
+            Command::Console(cmd) => match cmd {
+                ConsoleCommand::SendAll { stage } => {
+                    let stage = unalias_map(&stage);
+                    let data = PacketData::ChangeStage {
+                        stage,
+                        id: "".to_string(),
+                        scenerio: -1,
+                        sub_scenario: 0,
+                    };
+                    let p = Packet::new(Guid::default(), data);
+                    self.cli_broadcast.send(ClientCommand::SelfAddressed(p))?;
+                }
+                ConsoleCommand::Send {
+                    stage,
+                    id,
+                    scenario,
+                    players,
+                } => {
+                    let stage = unalias_map(&stage);
+                    let data = PacketData::ChangeStage {
+                        stage,
+                        id,
+                        scenerio: scenario,
+                        sub_scenario: 0,
+                    };
+                    let packet = Packet::new(Guid::default(), data);
+
+                    let mut send_all = false;
+                    for p in &players {
+                        match p {
+                            PlayerSelect::Player(_) => {}
+                            PlayerSelect::AllPlayers => {
+                                send_all = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if send_all {
+                        self.cli_broadcast
+                            .send(ClientCommand::SelfAddressed(packet))?;
+                    } else {
+                        for p in &players {
+                            match p {
+                                PlayerSelect::Player(pl) => {
+                                    let guid = self.get_guid(&pl).await?;
+                                    let cli = self.get_channel(&guid)?;
+                                    cli.send(ClientCommand::SelfAddressed(packet.clone()))
+                                        .await?;
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+                    }
+                }
+                ConsoleCommand::List => {
+                    let names = self.client_names.read().await;
+                    let players: Vec<_> = names.keys().collect();
+                    for player in players {
+                        println!("{}", player);
+                    }
+                }
+                _ => unimplemented!(),
+            },
         }
         Ok(true)
     }
@@ -353,4 +415,29 @@ async fn client_sync_shines(
             .await?;
     }
     Ok(())
+}
+
+fn unalias_map(alias: &str) -> String {
+    let unalias = match alias {
+        "cap" => "CapWorldHomeStage",
+        "cascade" => "WaterfallWorldHomeStage",
+        "sand" => "SandWorldHomeStage",
+        "lake" => "LakeWorldHomeStage",
+        "wooded" => "ForestWorldHomeStage",
+        "cloud" => "CloudWorldHomeStage",
+        "lost" => "ClashWorldHomeStage",
+        "metro" => "CityWorldHomeStage",
+        "sea" => "SeaWorldHomeStage",
+        "snow" => "SnowWorldHomeStage",
+        "lunch" => "LavaWorldHomeStage",
+        "ruined" => "BossRaidWorldHomeStage",
+        "bowser" => "SkyWorldHomeStage",
+        "moon" => "MoonWorldHomeStage",
+        "mush" => "PeachWorldHomeStage",
+        "dark" => "Special1WorldHomeStage",
+        "darker" => "Special2WorldHomeStage",
+        s => s,
+    };
+
+    unalias.to_string()
 }
