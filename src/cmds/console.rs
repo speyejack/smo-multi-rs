@@ -1,4 +1,4 @@
-use crate::{guid::Guid};
+use crate::guid::Guid;
 use std::{convert::Infallible, str::FromStr};
 
 use clap::{Subcommand, ValueEnum};
@@ -13,16 +13,16 @@ pub enum ConsoleCommand {
         stage: String,
         id: String,
         scenario: i8,
-        players: Vec<PlayerSelect>,
+        players: Vec<SinglePlayerSelect>,
     },
     Ban {
-        players: Vec<PlayerSelect>,
+        players: Vec<SinglePlayerSelect>,
     },
     Crash {
-        players: Vec<PlayerSelect>,
+        players: Vec<SinglePlayerSelect>,
     },
     Rejoin {
-        players: Vec<PlayerSelect>,
+        players: Vec<SinglePlayerSelect>,
     },
     #[clap(subcommand)]
     Scenario(ScenarioCommand),
@@ -49,12 +49,12 @@ pub enum ScenarioCommand {
 #[clap(rename_all = "lower")]
 pub enum TagCommand {
     Time {
-        player: PlayerSelect,
+        player: SinglePlayerSelect,
         minutes: u16,
         seconds: u8,
     },
     Seeking {
-        player: PlayerSelect,
+        player: SinglePlayerSelect,
         is_seeking: bool,
     },
     Start {
@@ -79,16 +79,16 @@ pub enum ShineCommand {
     List,
     Clear,
     Sync,
-    Send { id: u32, player: PlayerSelect },
+    Send { id: u32, player: SinglePlayerSelect },
 }
 
 #[derive(Debug, Clone)]
-pub enum PlayerSelect {
+pub enum SinglePlayerSelect {
     Player(String),
     AllPlayers,
 }
 
-impl FromStr for PlayerSelect {
+impl FromStr for SinglePlayerSelect {
     type Err = Infallible;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {

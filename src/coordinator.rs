@@ -1,6 +1,6 @@
 use crate::{
     client::SyncPlayer,
-    cmds::{console::PlayerSelect, ClientCommand, Command, ConsoleCommand, ServerCommand},
+    cmds::{console::SinglePlayerSelect, ClientCommand, Command, ConsoleCommand, ServerCommand},
     guid::Guid,
     net::{ConnectionType, Packet, PacketData},
     settings::SyncSettings,
@@ -152,8 +152,8 @@ impl Coordinator {
                     let mut send_all = false;
                     for p in &players {
                         match p {
-                            PlayerSelect::Player(_) => {}
-                            PlayerSelect::AllPlayers => {
+                            SinglePlayerSelect::Player(_) => {}
+                            SinglePlayerSelect::AllPlayers => {
                                 send_all = true;
                                 break;
                             }
@@ -166,7 +166,7 @@ impl Coordinator {
                     } else {
                         for p in &players {
                             match p {
-                                PlayerSelect::Player(pl) => {
+                                SinglePlayerSelect::Player(pl) => {
                                     let guid = self.get_guid(&pl).await?;
                                     let cli = self.get_channel(&guid)?;
                                     cli.send(ClientCommand::SelfAddressed(packet.clone()))
