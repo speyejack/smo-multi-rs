@@ -128,7 +128,7 @@ impl Coordinator {
                     let data = PacketData::ChangeStage {
                         stage,
                         id: "".to_string(),
-                        scenerio: -1,
+                        scenario: -1,
                         sub_scenario: 0,
                     };
                     let p = Packet::new(Guid::default(), data);
@@ -144,7 +144,7 @@ impl Coordinator {
                     let data = PacketData::ChangeStage {
                         stage,
                         id,
-                        scenerio: scenario,
+                        scenario,
                         sub_scenario: 0,
                     };
                     let packet = Packet::new(Guid::default(), data);

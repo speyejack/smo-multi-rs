@@ -115,7 +115,7 @@ pub enum PacketData {
     ChangeStage {
         stage: String,
         id: String,
-        scenerio: i8,
+        scenario: i8,
         sub_scenario: u8,
     },
     Command,
@@ -293,7 +293,7 @@ where
             11 => PacketData::ChangeStage {
                 stage: buf_size_to_string(buf, STAGE_CHANGE_NAME_SIZE)?,
                 id: buf_size_to_string(buf, STAGE_ID_SIZE)?,
-                scenerio: buf.get_i8(),
+                scenario: buf.get_i8(),
                 sub_scenario: buf.get_u8(),
             },
             12 => PacketData::Command {},
@@ -419,12 +419,12 @@ where
             PacketData::ChangeStage {
                 stage,
                 id,
-                scenerio,
+                scenario,
                 sub_scenario,
             } => {
                 buf.put_slice(&str_to_sized_array::<STAGE_CHANGE_NAME_SIZE>(stage));
                 buf.put_slice(&str_to_sized_array::<STAGE_ID_SIZE>(id));
-                buf.put_i8(*scenerio);
+                buf.put_i8(*scenario);
                 buf.put_u8(*sub_scenario);
             }
             PacketData::Command => {}
