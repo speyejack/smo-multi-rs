@@ -171,3 +171,47 @@ async fn test_movement() {
     let recv_packet = mock_client_1.get_packet().await;
     assert_eq!(packet, recv_packet);
 }
+
+#[test_log::test(tokio::test)]
+async fn test_cap_movement() {
+    let server = create_server().await;
+    let addr = server.get_bind_addr();
+    let _serv_task = tokio::task::spawn(server.spawn_minimal_server());
+    sleep(Duration::from_secs(1)).await;
+
+    let m1_guid = "1000000000-2000-3000-4000-5000000000".try_into().unwrap();
+    let m2_guid = "1020304050-0000-0000-0000-0000000000".try_into().unwrap();
+    let mut mock_client_1 = MockClient::connect(addr, m1_guid, "Mock1").await;
+    sleep(Duration::from_millis(10)).await;
+    let mut mock_client_2 = MockClient::connect(addr, m2_guid, "Mock2").await;
+    tracing::info!("Got mocks");
+
+    tracing::info!("Finishing handshake");
+    finish_mock_handshake(&mut mock_client_1, &mut mock_client_2).await;
+
+    let cap_data = PacketData::Cap {
+        pos: Vector3::x(),
+        rot: Default::default(),
+        cap_out: true,
+        cap_anim: "FlyingWaitR\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0".to_string(),
+    };
+
+    tracing::info!("Sending for first cap packet");
+    let packet = Packet::new(m1_guid, cap_data);
+    mock_client_1.send_packet(&packet).await;
+    let recv_packet = mock_client_2.get_packet().await;
+    assert_eq!(packet, recv_packet);
+
+    let cap_data = PacketData::Cap {
+        pos: Vector3::y(),
+        rot: Default::default(),
+        cap_out: true,
+        cap_anim: "StayR\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0".to_string(),
+    };
+
+    tracing::info!("Sending for second cap packet");
+    let packet = Packet::new(m2_guid, cap_data);
+    mock_client_2.send_packet(&packet).await;
+    let recv_packet = mock_client_1.get_packet().await;
+    assert_eq!(packet, recv_packet);
+}

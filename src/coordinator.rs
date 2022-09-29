@@ -7,12 +7,13 @@ use crate::{
     types::{ClientInitError, Result, SMOError},
 };
 
+use futures::SinkExt;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use tracing::{info_span, Instrument};
 type SyncShineBag = Arc<RwLock<HashSet<i32>>>;
 type ClientChannel = mpsc::Sender<ClientCommand>;
@@ -22,6 +23,7 @@ pub struct Coordinator {
     pub settings: SyncSettings,
     pub clients: HashMap<Guid, (ClientChannel, SyncPlayer)>,
     pub from_clients: mpsc::Receiver<Command>,
+    pub cli_broadcast: broadcast::Sender<ClientCommand>,
 }
 
 impl Coordinator {
@@ -116,7 +118,7 @@ impl Coordinator {
                     }
                     _ => {}
                 };
-                self.broadcast(packet).await?;
+                self.broadcast(packet)?;
             }
             Command::Console(_) => todo!(),
         }
@@ -124,20 +126,8 @@ impl Coordinator {
     }
 
     async fn merge_scenario(&self, packet: &Packet) -> Result<()> {
-        for (_guid, (channel, client)) in &self.clients {
-            let mut packet = packet.clone();
-            let scenario_num = client.read().await.scenario;
-            match &mut packet.data {
-                PacketData::ChangeStage {
-                    ref mut scenerio, ..
-                } => {
-                    *scenerio = scenario_num;
-                }
-                _ => {}
-            }
-
-            channel.send(ClientCommand::Packet(packet)).await?;
-        }
+        self.cli_broadcast
+            .send(ClientCommand::SelfAddressed(packet.clone()))?;
         Ok(())
     }
 
@@ -272,14 +262,14 @@ impl Coordinator {
             }
         }
 
-        self.broadcast(packet).await
+        self.broadcast(packet)
     }
 
     async fn disconnect_player(&mut self, guid: Guid) -> Result<()> {
         tracing::info!("Disconnecting player {}", guid);
         if let Some((comm, _)) = self.clients.remove(&guid) {
             let packet = Packet::new(guid, PacketData::Disconnect);
-            self.broadcast(packet.clone()).await?;
+            self.broadcast(packet.clone())?;
             let disconnect = ClientCommand::Packet(packet);
             comm.send(disconnect).await?;
         }
@@ -301,11 +291,12 @@ impl Coordinator {
         Ok(())
     }
 
-    async fn broadcast(&mut self, mut p: Packet) -> Result<()> {
+    fn broadcast(&mut self, mut p: Packet) -> Result<()> {
         p.resize();
-        for (cli, _) in &mut self.clients.values() {
-            cli.send(ClientCommand::Packet(p.clone())).await?;
-        }
+        self.cli_broadcast.send(ClientCommand::Packet(p.clone()))?;
+        // for (cli, _) in &mut self.clients.values() {
+        //     cli.send(ClientCommand::Packet(p.clone())).await?;
+        // }
         Ok(())
     }
 

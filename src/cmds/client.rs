@@ -1,6 +1,6 @@
 use crate::net::Packet;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ClientCommand {
     Packet(Packet),
     SelfAddressed(Packet),

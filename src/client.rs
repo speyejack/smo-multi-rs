@@ -8,6 +8,7 @@ use crate::net::udp_conn::UdpConnection;
 use crate::net::Packet;
 use crate::net::PacketData;
 use crate::settings::SyncSettings;
+use crate::types::ChannelError;
 use crate::types::ClientInitError;
 use crate::types::ErrorSeverity;
 use crate::types::Result;
@@ -22,7 +23,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::net::UdpSocket;
 use tokio::select;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 
 pub type SyncPlayer = Arc<RwLock<PlayerData>>;
 
@@ -36,6 +37,8 @@ pub struct Client {
     pub udp_conn: UdpConnection,
     pub to_coord: mpsc::Sender<Command>,
     pub from_server: mpsc::Receiver<ClientCommand>,
+    pub send_broadcast: broadcast::Sender<ClientCommand>,
+    pub recv_broadcast: broadcast::Receiver<ClientCommand>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -57,6 +60,13 @@ pub struct PlayerData {
 enum ClientEvent {
     Incoming(Packet),
     Outgoing(ClientCommand),
+}
+
+#[derive(Debug)]
+enum PacketDestination {
+    NoSend,
+    Broadcast,
+    Coordinator,
 }
 
 impl Client {
@@ -95,7 +105,8 @@ impl Client {
                 tracing::trace!("Got udp event!");
                 ClientEvent::Incoming(udp_packet?)
             },
-            command = self.from_server.recv() => ClientEvent::Outgoing(command.ok_or(SMOError::RecvChannel)?),
+            command = self.from_server.recv() => ClientEvent::Outgoing(command.ok_or(ChannelError::RecvChannel)?),
+            command = self.recv_broadcast.recv() => ClientEvent::Outgoing(command?),
         };
         Ok(event)
     }
@@ -113,14 +124,14 @@ impl Client {
 
     async fn handle_packet(&mut self, packet: Packet) -> Result<()> {
         tracing::debug!("Handling packet: {}", &packet.data.get_type_name());
-        let send_to_coord = match &packet.data {
+        let send_destination = match &packet.data {
             PacketData::Costume(costume) => {
                 // TODO: Figure out why shine sync code in original
                 // code base for costume packet
                 let mut data = self.player.write().await;
                 data.costume = costume.clone();
                 data.loaded_save = true;
-                true
+                PacketDestination::Coordinator
             }
             PacketData::Game {
                 is_2d,
@@ -136,7 +147,7 @@ impl Client {
                     data.shine_sync.clear();
                 }
 
-                true
+                PacketDestination::Coordinator
             }
             PacketData::Tag {
                 update_type,
@@ -153,24 +164,30 @@ impl Client {
                         data.is_seeking = *is_it;
                     }
                 }
-                true
+                PacketDestination::Broadcast
             }
             PacketData::Shine { shine_id, .. } => {
                 let mut data = self.player.write().await;
                 if data.loaded_save {
                     data.shine_sync.insert(*shine_id);
                 }
-                true
+                PacketDestination::Coordinator
             }
             PacketData::UdpInit { port } => {
                 self.udp_conn.set_client_port(*port);
-                false
+                PacketDestination::NoSend
             }
-            _ => true,
+            _ => PacketDestination::Broadcast,
         };
 
-        if send_to_coord {
-            self.to_coord.send(Command::Packet(packet)).await?;
+        match send_destination {
+            PacketDestination::NoSend => {}
+            PacketDestination::Broadcast => {
+                let mut packet = packet;
+                packet.resize();
+                self.send_broadcast.send(ClientCommand::Packet(packet))?;
+            }
+            PacketDestination::Coordinator => self.to_coord.send(Command::Packet(packet)).await?,
         }
 
         Ok(())
@@ -223,6 +240,7 @@ impl Client {
     pub async fn initialize_client(
         socket: TcpStream,
         to_coord: mpsc::Sender<Command>,
+        broadcast: broadcast::Sender<ClientCommand>,
         udp_port: u16,
         settings: SyncSettings,
     ) -> Result<()> {
@@ -272,6 +290,7 @@ impl Client {
                 .await?;
 
                 let data = Arc::new(RwLock::new(data));
+                let recv_broadcast = broadcast.subscribe();
 
                 let to_coord = to_coord.clone();
                 tracing::debug!("Created client data");
@@ -284,6 +303,8 @@ impl Client {
                     from_server,
                     conn,
                     udp_conn,
+                    send_broadcast: broadcast,
+                    recv_broadcast,
                 };
 
                 Ok(Command::Server(ServerCommand::NewPlayer {

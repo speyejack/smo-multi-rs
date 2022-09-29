@@ -1,4 +1,5 @@
 use crate::{
+    cmds::ClientCommand,
     console::parse_commands,
     coordinator::Coordinator,
     listener::Listener,
@@ -11,13 +12,14 @@ use std::{
     net::SocketAddr,
     sync::Arc,
 };
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{broadcast, mpsc, RwLock};
 
 use crate::cmds::Command;
 
 pub struct Server {
     pub settings: SyncSettings,
     pub to_coord: mpsc::Sender<Command>,
+    pub cli_broadcast: broadcast::Sender<ClientCommand>,
     pub listener: Listener,
     pub coord: Coordinator,
 }
@@ -29,10 +31,12 @@ impl Server {
         let local_bind_addr = SocketAddr::new(settings.server.address, settings.server.port);
 
         let settings = Arc::new(RwLock::new(settings));
+        let (cli_broadcast, _) = broadcast::channel(100);
 
         let listener = Listener {
             settings: settings.clone(),
             to_coord: to_coord.clone(),
+            cli_broadcast: cli_broadcast.clone(),
             tcp_bind_addr: local_bind_addr,
             udp_port_addrs: Some((51888, 32)),
             listener: None,
@@ -43,6 +47,7 @@ impl Server {
             from_clients,
             settings: settings.clone(),
             clients: HashMap::new(),
+            cli_broadcast: cli_broadcast.clone(),
         };
 
         Server {
@@ -50,6 +55,7 @@ impl Server {
             to_coord,
             listener,
             coord,
+            cli_broadcast,
         }
     }
 
