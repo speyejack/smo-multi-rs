@@ -7,7 +7,10 @@ use crate::{
 use hex::FromHexError;
 use serde::{de::Error as DeError, ser::Error as SerError};
 use thiserror::*;
-use tokio::{sync::mpsc::error::SendError, task::JoinError};
+use tokio::{
+    sync::{broadcast, mpsc::error::SendError},
+    task::JoinError,
+};
 pub type Result<T> = std::result::Result<T, SMOError>;
 
 #[derive(Error, Debug)]
@@ -21,12 +24,8 @@ pub enum SMOError {
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Clap(#[from] clap::Error),
-    #[error("Sending channel error")]
-    SendChannel(#[from] Box<SendError<Command>>),
-    #[error("Sending client channel error")]
-    SendClientChannel(#[from] Box<SendError<ClientCommand>>),
-    #[error("Receiving channel error")]
-    RecvChannel,
+    #[error("Channel error")]
+    Channel(Box<ChannelError>),
     #[error("Join error")]
     ThreadJoin(#[from] JoinError),
     #[error("Failed to initialize client: {0}")]
@@ -39,16 +38,27 @@ pub enum SMOError {
     Other(#[from] anyhow::Error),
 }
 
-impl From<SendError<Command>> for SMOError {
-    fn from(e: SendError<Command>) -> Self {
-        Box::new(e).into()
+impl<T> From<T> for SMOError
+where
+    T: Into<ChannelError>,
+{
+    fn from(e: T) -> Self {
+        SMOError::Channel(Box::new(e.into()))
     }
 }
 
-impl From<SendError<ClientCommand>> for SMOError {
-    fn from(e: SendError<ClientCommand>) -> Self {
-        Box::new(e).into()
-    }
+#[derive(Error, Debug)]
+pub enum ChannelError {
+    #[error("Sending channel error")]
+    SendChannel(#[from] SendError<Command>),
+    #[error("Sending client channel error")]
+    SendClientChannel(#[from] SendError<ClientCommand>),
+    #[error("Sending channel error")]
+    SendBroadcastChannel(#[from] broadcast::error::SendError<ClientCommand>),
+    #[error("Receiving broadcast channel error")]
+    RecvBroadcastChannel(#[from] broadcast::error::RecvError),
+    #[error("Receiving channel error")]
+    RecvChannel,
 }
 
 #[derive(Error, Debug)]
@@ -86,7 +96,7 @@ impl SMOError {
         match self {
             Self::Encoding(EncodingError::ConnectionClose)
             | Self::Encoding(EncodingError::ConnectionReset)
-            | Self::RecvChannel => ErrorSeverity::ClientFatal,
+            | Self::Channel(_) => ErrorSeverity::ClientFatal,
             _ => ErrorSeverity::NonCritical,
         }
     }
