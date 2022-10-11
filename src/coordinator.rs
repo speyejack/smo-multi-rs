@@ -22,10 +22,21 @@ type ClientChannel = mpsc::Sender<ClientCommand>;
 pub struct Coordinator {
     pub shine_bag: SyncShineBag,
     pub settings: SyncSettings,
-    pub clients: HashMap<Guid, (ClientChannel, SyncPlayer)>,
+    pub clients: HashMap<Guid, PlayerInfo>,
     pub client_names: SyncClientNames,
     pub from_clients: mpsc::Receiver<Command>,
     pub cli_broadcast: broadcast::Sender<ClientCommand>,
+}
+
+#[derive(Clone)]
+pub struct PlayerInfo {
+    channel: ClientChannel,
+    data: SyncPlayer,
+}
+
+pub enum PlayerSelect<T> {
+    AllPlayers,
+    SelectPlayers(Vec<T>),
 }
 
 impl Coordinator {
@@ -184,6 +195,17 @@ impl Coordinator {
                         println!("{}", player);
                     }
                 }
+                ConsoleCommand::Crash { players } => {
+                    let data = PacketData::ChangeStage {
+                        id: "$among$us/SubArea".to_string(),
+                        stage: "$agogusStage".to_string(),
+                        scenario: 21,
+                        sub_scenario: 69, // invalid id
+                    };
+                    let packet = Packet::new(Guid::default(), data);
+                    let cmd = ClientCommand::SelfAddressed(packet);
+                    self.send_players(players.into(), cmd).await?;
+                }
                 _ => unimplemented!(),
             },
         }
@@ -201,18 +223,61 @@ impl Coordinator {
         tracing::warn!("Shine persisting not avaliable.")
     }
 
+    fn get_client_info(&self, id: &Guid) -> std::result::Result<&PlayerInfo, SMOError> {
+        self.clients.get(id).ok_or(SMOError::InvalidID(*id))
+    }
+
     fn get_client(&self, id: &Guid) -> std::result::Result<&SyncPlayer, SMOError> {
-        self.clients
-            .get(id)
-            .map(|x| &x.1)
-            .ok_or(SMOError::InvalidID(*id))
+        self.get_client_info(id).map(|x| &x.data)
     }
 
     fn get_channel(&self, id: &Guid) -> std::result::Result<&ClientChannel, SMOError> {
-        self.clients
-            .get(id)
-            .map(|x| &x.0)
-            .ok_or(SMOError::InvalidID(*id))
+        self.get_client_info(id).map(|x| &x.channel)
+    }
+
+    async fn get_clients(
+        &self,
+        players: PlayerSelect<String>,
+    ) -> std::result::Result<PlayerSelect<&PlayerInfo>, SMOError> {
+        let client_names = self.client_names.read().await;
+
+        let select = match players {
+            PlayerSelect::AllPlayers => PlayerSelect::AllPlayers,
+            PlayerSelect::SelectPlayers(players) => PlayerSelect::SelectPlayers(
+                players
+                    .into_iter()
+                    .map(|name| {
+                        client_names
+                            .get(&name)
+                            .map(|x| *x)
+                            .ok_or_else(|| SMOError::InvalidName(name))
+                    })
+                    .map(|guid| {
+                        let guid = guid?;
+                        self.clients
+                            .get(&guid)
+                            .ok_or_else(|| SMOError::InvalidID(guid))
+                    })
+                    .collect::<Result<_>>()?,
+            ),
+        };
+        Ok(select)
+    }
+
+    async fn send_players(&self, players: PlayerSelect<String>, cmd: ClientCommand) -> Result<()> {
+        let players = self.get_clients(players).await?;
+        match players {
+            PlayerSelect::AllPlayers => {
+                self.cli_broadcast.send(cmd)?;
+            }
+            PlayerSelect::SelectPlayers(players) => {
+                for p in players {
+                    let cli = &p.channel;
+                    cli.send(cmd.clone()).await?;
+                }
+            }
+        };
+        Ok(())
     }
 
     async fn get_guid(&self, name: &str) -> std::result::Result<Guid, SMOError> {
@@ -276,7 +341,9 @@ impl Coordinator {
         let data = match connection_type {
             ConnectionType::FirstConnection => cli.player.clone(),
             ConnectionType::Reconnecting => match self.clients.remove(&id) {
-                Some((_, prev_data)) => {
+                Some(PlayerInfo {
+                    data: prev_data, ..
+                }) => {
                     cli.player = prev_data.clone();
                     prev_data
                 }
@@ -288,7 +355,13 @@ impl Coordinator {
         let cli_guid = cli.guid;
 
         self.client_names.write().await.insert(cli_name, cli_guid);
-        self.clients.insert(id, (comm.clone(), data));
+        self.clients.insert(
+            id,
+            PlayerInfo {
+                channel: comm.clone(),
+                data,
+            },
+        );
 
         let name = cli.display_name.clone();
         tracing::info!("New client connected: {} ({})", &name, cli.guid);
@@ -314,7 +387,13 @@ impl Coordinator {
 
         drop(settings);
         // Sync connection, costumes, and last game packet
-        for (other_id, (_, other_cli)) in self.clients.iter() {
+        for (
+            other_id,
+            PlayerInfo {
+                data: other_cli, ..
+            },
+        ) in self.clients.iter()
+        {
             let other_cli = other_cli.read().await;
 
             let connect_packet = Packet::new(
@@ -346,7 +425,11 @@ impl Coordinator {
 
     async fn disconnect_player(&mut self, guid: Guid) -> Result<()> {
         tracing::info!("Disconnecting player {}", guid);
-        if let Some((comm, data)) = self.clients.remove(&guid) {
+        if let Some(PlayerInfo {
+            data,
+            channel: comm,
+        }) = self.clients.remove(&guid)
+        {
             let name = &data.read().await.name;
             self.client_names.write().await.remove(name);
             let packet = Packet::new(guid, PacketData::Disconnect);
@@ -359,7 +442,14 @@ impl Coordinator {
     }
 
     async fn sync_all_shines(&mut self) -> Result<()> {
-        for (_guid, (channel, player)) in &self.clients {
+        for (
+            _guid,
+            PlayerInfo {
+                channel,
+                data: player,
+            },
+        ) in &self.clients
+        {
             let sender_guid = Guid::default();
             client_sync_shines(
                 channel.clone(),

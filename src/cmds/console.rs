@@ -1,4 +1,4 @@
-use crate::guid::Guid;
+use crate::{coordinator::PlayerSelect, guid::Guid};
 use std::{convert::Infallible, str::FromStr};
 
 use clap::{Subcommand, ValueEnum};
@@ -97,6 +97,23 @@ impl FromStr for SinglePlayerSelect {
         } else {
             Self::Player(s.to_string())
         })
+    }
+}
+
+impl From<Vec<SinglePlayerSelect>> for PlayerSelect<String> {
+    fn from(players: Vec<SinglePlayerSelect>) -> Self {
+        let players: Option<Vec<_>> = players
+            .into_iter()
+            .map(|x| match x {
+                SinglePlayerSelect::Player(p) => Some(p),
+                SinglePlayerSelect::AllPlayers => None,
+            })
+            .collect();
+
+        match players {
+            Some(x) => PlayerSelect::SelectPlayers(x),
+            None => PlayerSelect::AllPlayers,
+        }
     }
 }
 
