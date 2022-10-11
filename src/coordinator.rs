@@ -1,6 +1,6 @@
 use crate::{
     client::SyncPlayer,
-    cmds::{console::SinglePlayerSelect, ClientCommand, Command, ConsoleCommand, ServerCommand},
+    cmds::{ClientCommand, Command, ConsoleCommand, ServerCommand},
     guid::Guid,
     net::{ConnectionType, Packet, PacketData},
     settings::SyncSettings,
@@ -133,83 +133,63 @@ impl Coordinator {
                 };
                 self.broadcast(packet)?;
             }
-            Command::Console(cmd) => match cmd {
-                ConsoleCommand::SendAll { stage } => {
-                    let stage = unalias_map(&stage);
-                    let data = PacketData::ChangeStage {
-                        stage,
-                        id: "".to_string(),
-                        scenario: -1,
-                        sub_scenario: 0,
-                    };
-                    let p = Packet::new(Guid::default(), data);
-                    self.cli_broadcast.send(ClientCommand::SelfAddressed(p))?;
-                }
-                ConsoleCommand::Send {
+            Command::Console(cmd) => self.handle_console_cmd(cmd).await?,
+        }
+        Ok(true)
+    }
+
+    async fn handle_console_cmd(&self, cmd: ConsoleCommand) -> Result<()> {
+        match cmd {
+            ConsoleCommand::SendAll { stage } => {
+                let stage = unalias_map(&stage);
+                let data = PacketData::ChangeStage {
+                    stage,
+                    id: "".to_string(),
+                    scenario: -1,
+                    sub_scenario: 0,
+                };
+                let p = Packet::new(Guid::default(), data);
+                self.cli_broadcast.send(ClientCommand::SelfAddressed(p))?;
+            }
+            ConsoleCommand::Send {
+                stage,
+                id,
+                scenario,
+                players,
+            } => {
+                let stage = unalias_map(&stage);
+                let data = PacketData::ChangeStage {
                     stage,
                     id,
                     scenario,
-                    players,
-                } => {
-                    let stage = unalias_map(&stage);
-                    let data = PacketData::ChangeStage {
-                        stage,
-                        id,
-                        scenario,
-                        sub_scenario: 0,
-                    };
-                    let packet = Packet::new(Guid::default(), data);
+                    sub_scenario: 0,
+                };
+                let packet = Packet::new(Guid::default(), data);
 
-                    let mut send_all = false;
-                    for p in &players {
-                        match p {
-                            SinglePlayerSelect::Player(_) => {}
-                            SinglePlayerSelect::AllPlayers => {
-                                send_all = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if send_all {
-                        self.cli_broadcast
-                            .send(ClientCommand::SelfAddressed(packet))?;
-                    } else {
-                        for p in &players {
-                            match p {
-                                SinglePlayerSelect::Player(pl) => {
-                                    let guid = self.get_guid(&pl).await?;
-                                    let cli = self.get_channel(&guid)?;
-                                    cli.send(ClientCommand::SelfAddressed(packet.clone()))
-                                        .await?;
-                                }
-                                _ => unreachable!(),
-                            }
-                        }
-                    }
+                let cmd = ClientCommand::SelfAddressed(packet);
+                self.send_players(players.into(), cmd).await?;
+            }
+            ConsoleCommand::List => {
+                let names = self.client_names.read().await;
+                let players: Vec<_> = names.keys().collect();
+                for player in players {
+                    println!("{}", player);
                 }
-                ConsoleCommand::List => {
-                    let names = self.client_names.read().await;
-                    let players: Vec<_> = names.keys().collect();
-                    for player in players {
-                        println!("{}", player);
-                    }
-                }
-                ConsoleCommand::Crash { players } => {
-                    let data = PacketData::ChangeStage {
-                        id: "$among$us/SubArea".to_string(),
-                        stage: "$agogusStage".to_string(),
-                        scenario: 21,
-                        sub_scenario: 69, // invalid id
-                    };
-                    let packet = Packet::new(Guid::default(), data);
-                    let cmd = ClientCommand::SelfAddressed(packet);
-                    self.send_players(players.into(), cmd).await?;
-                }
-                _ => unimplemented!(),
-            },
+            }
+            ConsoleCommand::Crash { players } => {
+                let data = PacketData::ChangeStage {
+                    id: "$among$us/SubArea".to_string(),
+                    stage: "$agogusStage".to_string(),
+                    scenario: 21,
+                    sub_scenario: 69, // invalid id
+                };
+                let packet = Packet::new(Guid::default(), data);
+                let cmd = ClientCommand::SelfAddressed(packet);
+                self.send_players(players.into(), cmd).await?;
+            }
+            _ => unimplemented!(),
         }
-        Ok(true)
+        Ok(())
     }
 
     async fn merge_scenario(&self, packet: &Packet) -> Result<()> {
@@ -278,15 +258,6 @@ impl Coordinator {
             }
         };
         Ok(())
-    }
-
-    async fn get_guid(&self, name: &str) -> std::result::Result<Guid, SMOError> {
-        self.client_names
-            .read()
-            .await
-            .get(name)
-            .map(|x| *x)
-            .ok_or_else(|| SMOError::InvalidName(name.to_string()))
     }
 
     async fn add_client(&mut self, cmd: ServerCommand) -> Result<()> {
