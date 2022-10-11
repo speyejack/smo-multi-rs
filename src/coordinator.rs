@@ -1,8 +1,9 @@
 use crate::{
     client::SyncPlayer,
-    cmds::{ClientCommand, Command, ConsoleCommand, ServerCommand},
+    cmds::{console::ScenarioCommand, ClientCommand, Command, ConsoleCommand, ServerCommand},
     guid::Guid,
     net::{ConnectionType, Packet, PacketData},
+    read_settings, save_settings,
     settings::SyncSettings,
     types::{ClientInitError, Result, SMOError},
 };
@@ -133,23 +134,27 @@ impl Coordinator {
                 };
                 self.broadcast(packet)?;
             }
-            Command::Console(cmd) => self.handle_console_cmd(cmd).await?,
+            Command::Console(cmd, reply) => {
+                let result = self.handle_console_cmd(cmd).await;
+                reply.send(result).expect("Reply channel failed")
+            }
         }
         Ok(true)
     }
 
-    async fn handle_console_cmd(&self, cmd: ConsoleCommand) -> Result<()> {
-        match cmd {
+    async fn handle_console_cmd(&mut self, cmd: ConsoleCommand) -> Result<String> {
+        let string: String = match cmd {
             ConsoleCommand::SendAll { stage } => {
                 let stage = unalias_map(&stage);
                 let data = PacketData::ChangeStage {
-                    stage,
+                    stage: stage.clone(),
                     id: "".to_string(),
                     scenario: -1,
                     sub_scenario: 0,
                 };
                 let p = Packet::new(Guid::default(), data);
                 self.cli_broadcast.send(ClientCommand::SelfAddressed(p))?;
+                format!("Sent players to {}:-1", stage)
             }
             ConsoleCommand::Send {
                 stage,
@@ -159,22 +164,31 @@ impl Coordinator {
             } => {
                 let stage = unalias_map(&stage);
                 let data = PacketData::ChangeStage {
-                    stage,
+                    stage: stage.clone(),
                     id,
-                    scenario,
+                    scenario: scenario.clone(),
                     sub_scenario: 0,
                 };
                 let packet = Packet::new(Guid::default(), data);
 
                 let cmd = ClientCommand::SelfAddressed(packet);
-                self.send_players(players.into(), cmd).await?;
+                let players = self.get_clients(players.into()).await?;
+                self.send_players(players, cmd).await?;
+                format!("Sent players to {}:{}", stage, scenario)
             }
             ConsoleCommand::List => {
-                let names = self.client_names.read().await;
-                let players: Vec<_> = names.keys().collect();
-                for player in players {
-                    println!("{}", player);
+                let mut player_data = Vec::default();
+                for (guid, data) in self.clients.iter() {
+                    let name = &data.data.read().await.name;
+                    player_data.push((guid, name.to_string()));
                 }
+
+                let player_strs: Vec<String> = player_data
+                    .into_iter()
+                    .map(|x| format!("{} ({})", x.0, x.1))
+                    .collect();
+
+                format!("List: \n\t{}", player_strs.join("\n\t"))
             }
             ConsoleCommand::Crash { players } => {
                 let data = PacketData::ChangeStage {
@@ -185,11 +199,53 @@ impl Coordinator {
                 };
                 let packet = Packet::new(Guid::default(), data);
                 let cmd = ClientCommand::SelfAddressed(packet);
-                self.send_players(players.into(), cmd).await?;
+                let players = self.get_clients(players.into()).await?;
+                self.send_players(players, cmd);
+                format!("Crashed players")
             }
-            _ => unimplemented!(),
-        }
-        Ok(())
+            ConsoleCommand::Ban { players } => todo!(),
+            ConsoleCommand::Rejoin { players } => {
+                self.disconnect_players(players.into()).await;
+                format!("Rejoined players")
+            }
+            ConsoleCommand::Scenario(scenario) => match scenario {
+                ScenarioCommand::Merge { enabled } => match enabled {
+                    Some(to_enabled) => {
+                        let settings = self.settings.read().await;
+                        settings.scenario.merge_enabled = to_enabled;
+                        save_settings(&settings);
+                        drop(settings);
+                        if to_enabled {
+                            format!("Enabled scenario merge")
+                        } else {
+                            format!("Disabled scenario merge")
+                        }
+                    }
+                    None => {
+                        let is_enabled = self.settings.read().await.scenario.merge_enabled;
+                        format!("Scenario merging is {}", is_enabled)
+                    }
+                },
+            },
+            ConsoleCommand::Tag(tag) => todo!(),
+            ConsoleCommand::MaxPlayers { player_count } => {
+                let mut settings = self.settings.write().await;
+                settings.server.max_players = player_count;
+                save_settings(&settings);
+                drop(settings);
+                self.disconnect_players(PlayerSelect::AllPlayers).await;
+                format!("Saved and set max players to {}", player_count)
+            }
+            ConsoleCommand::Flip(_) => todo!(),
+            ConsoleCommand::Shine(_) => todo!(),
+            ConsoleCommand::LoadSettings => {
+                let mut settings = self.settings.write().await;
+                let new_settings = read_settings()?;
+                *settings = new_settings;
+                format!("Loaded settings.json")
+            }
+        };
+        Ok(string)
     }
 
     async fn merge_scenario(&self, packet: &Packet) -> Result<()> {
@@ -244,8 +300,11 @@ impl Coordinator {
         Ok(select)
     }
 
-    async fn send_players(&self, players: PlayerSelect<String>, cmd: ClientCommand) -> Result<()> {
-        let players = self.get_clients(players).await?;
+    async fn send_players(
+        &self,
+        players: PlayerSelect<&PlayerInfo>,
+        cmd: ClientCommand,
+    ) -> Result<()> {
         match players {
             PlayerSelect::AllPlayers => {
                 self.cli_broadcast.send(cmd)?;
@@ -392,6 +451,14 @@ impl Coordinator {
         }
 
         self.broadcast(packet)
+    }
+
+    async fn disconnect_players(&mut self, players: PlayerSelect<String>) {
+        let players = match players {
+            PlayerSelect::AllPlayers => todo!(),
+            PlayerSelect::SelectPlayers(_) => todo!(),
+        };
+        todo!()
     }
 
     async fn disconnect_player(&mut self, guid: Guid) -> Result<()> {

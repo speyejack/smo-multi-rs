@@ -7,11 +7,13 @@ pub use client::ClientCommand;
 pub use console::ConsoleCommand;
 pub use coord::ServerCommand;
 
-use crate::net::Packet;
+use crate::{net::Packet, types::SMOError};
+
+use self::reply::ReplyChannel;
 
 #[derive(Debug)]
 pub enum Command {
     Packet(Packet),
-    Console(ConsoleCommand),
+    Console(ConsoleCommand, ReplyChannel<Result<String, SMOError>>),
     Server(ServerCommand),
 }

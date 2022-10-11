@@ -8,7 +8,7 @@ use hex::FromHexError;
 use serde::{de::Error as DeError, ser::Error as SerError};
 use thiserror::*;
 use tokio::{
-    sync::{broadcast, mpsc::error::SendError},
+    sync::{broadcast, mpsc::error::SendError, oneshot},
     task::JoinError,
 };
 pub type Result<T> = std::result::Result<T, SMOError>;
@@ -58,7 +58,9 @@ pub enum ChannelError {
     SendBroadcastChannel(#[from] broadcast::error::SendError<ClientCommand>),
     #[error("Receiving broadcast channel error")]
     RecvBroadcastChannel(#[from] broadcast::error::RecvError),
-    #[error("Receiving channel error")]
+    #[error("Reply channel recv error")]
+    ReplyChannel(#[from] oneshot::error::RecvError),
+    #[error("Receiving error")]
     RecvChannel,
 }
 

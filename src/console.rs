@@ -1,10 +1,10 @@
 use crate::{
     cmds::{Command, ConsoleCommand},
-    types::{Result},
+    types::Result,
 };
 use clap::Parser;
 use std::io::Write;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 // Call this console
 #[derive(Parser, Debug)]
@@ -26,8 +26,13 @@ pub async fn parse_commands(mut to_coord: mpsc::Sender<Command>) -> Result<()> {
 async fn parse_command(to_coord: &mut mpsc::Sender<Command>) -> Result<()> {
     let task = tokio::task::spawn_blocking(|| async { read_command() });
     let command: Cli = tokio::join!(task).0?.await?;
+    let (sender, recv) = oneshot::channel();
+    to_coord.send(Command::Console(command.cmd, sender)).await?;
+    let result_str = recv.blocking_recv()?;
+    let reply_str = result_str?;
+    println!("{}", reply_str);
 
-    Ok(to_coord.send(Command::Console(command.cmd)).await?)
+    Ok(())
 }
 
 fn read_command() -> Result<Cli> {
