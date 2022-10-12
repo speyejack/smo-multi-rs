@@ -1,11 +1,18 @@
-use std::{collections::HashSet, net::IpAddr, sync::Arc};
+use std::{
+    collections::HashSet,
+    fs::File,
+    io::{BufReader, BufWriter},
+    net::IpAddr,
+    sync::Arc,
+};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::guid::Guid;
+use crate::{guid::Guid, types::Result};
 
 pub type SyncSettings = Arc<RwLock<Settings>>;
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Settings {
@@ -131,4 +138,21 @@ impl Default for FlipPovSettings {
     fn default() -> Self {
         Self::Both
     }
+}
+
+pub fn load_settings() -> Result<Settings> {
+    let file = File::open("./settings.json")?;
+    let reader = BufReader::new(file);
+    let settings = serde_json::from_reader(reader)?;
+    tracing::debug!("Loading settings");
+
+    Ok(settings)
+}
+
+pub fn save_settings(settings: &Settings) -> Result<()> {
+    tracing::debug!("Saving settings");
+    let file = File::create("./settings.json")?;
+    let writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, settings)?;
+    Ok(())
 }

@@ -3,8 +3,7 @@ use crate::{
     cmds::{console::ScenarioCommand, ClientCommand, Command, ConsoleCommand, ServerCommand},
     guid::Guid,
     net::{ConnectionType, Packet, PacketData},
-    read_settings, save_settings,
-    settings::SyncSettings,
+    settings::{load_settings, save_settings, SyncSettings},
     types::{ClientInitError, Result, SMOError},
 };
 
@@ -166,7 +165,7 @@ impl Coordinator {
                 let data = PacketData::ChangeStage {
                     stage: stage.clone(),
                     id,
-                    scenario: scenario.clone(),
+                    scenario,
                     sub_scenario: 0,
                 };
                 let packet = Packet::new(Guid::default(), data);
@@ -200,26 +199,44 @@ impl Coordinator {
                 let packet = Packet::new(Guid::default(), data);
                 let cmd = ClientCommand::SelfAddressed(packet);
                 let players = self.get_clients(players.into()).await?;
-                self.send_players(players, cmd);
-                format!("Crashed players")
+                self.send_players(players, cmd).await?;
+                "Crashed players".to_string()
             }
-            ConsoleCommand::Ban { players } => todo!(),
+            ConsoleCommand::Ban { players } => {
+                let players = players.into();
+                self.disconnect_players(&players).await;
+
+                let players = self.players_to_guids(players).await?;
+                let mut settings = self.settings.write().await;
+
+                let banned_players = settings
+                    .ban_list
+                    .players
+                    .union(&players.into_iter().collect())
+                    .copied()
+                    .collect();
+
+                settings.ban_list.players = banned_players;
+
+                "Banned players".to_string()
+            }
             ConsoleCommand::Rejoin { players } => {
-                self.disconnect_players(players.into()).await;
-                format!("Rejoined players")
+                self.disconnect_players(&players.into()).await;
+                "Rejoined players".to_string()
             }
             ConsoleCommand::Scenario(scenario) => match scenario {
                 ScenarioCommand::Merge { enabled } => match enabled {
                     Some(to_enabled) => {
-                        let settings = self.settings.read().await;
+                        let mut settings = self.settings.write().await;
                         settings.scenario.merge_enabled = to_enabled;
-                        save_settings(&settings);
+                        save_settings(&settings)?;
                         drop(settings);
                         if to_enabled {
-                            format!("Enabled scenario merge")
+                            "Enabled scenario merge"
                         } else {
-                            format!("Disabled scenario merge")
+                            "Disabled scenario merge"
                         }
+                        .to_string()
                     }
                     None => {
                         let is_enabled = self.settings.read().await.scenario.merge_enabled;
@@ -233,14 +250,14 @@ impl Coordinator {
                 settings.server.max_players = player_count;
                 save_settings(&settings);
                 drop(settings);
-                self.disconnect_players(PlayerSelect::AllPlayers).await;
+                self.disconnect_players(&PlayerSelect::AllPlayers).await;
                 format!("Saved and set max players to {}", player_count)
             }
             ConsoleCommand::Flip(_) => todo!(),
             ConsoleCommand::Shine(_) => todo!(),
             ConsoleCommand::LoadSettings => {
                 let mut settings = self.settings.write().await;
-                let new_settings = read_settings()?;
+                let new_settings = load_settings()?;
                 *settings = new_settings;
                 format!("Loaded settings.json")
             }
@@ -271,10 +288,28 @@ impl Coordinator {
         self.get_client_info(id).map(|x| &x.channel)
     }
 
+    async fn players_to_guids(&self, players: PlayerSelect<String>) -> Result<Vec<Guid>> {
+        let client_names = self.client_names.read().await;
+
+        let select: Result<Vec<Guid>> = match players {
+            PlayerSelect::AllPlayers => Ok(self.clients.keys().copied().collect()),
+            PlayerSelect::SelectPlayers(players) => players
+                .into_iter()
+                .map(|name| {
+                    client_names
+                        .get(&name)
+                        .copied()
+                        .ok_or(SMOError::InvalidName(name))
+                })
+                .collect::<Result<Vec<_>>>(),
+        };
+        select
+    }
+
     async fn get_clients(
         &self,
         players: PlayerSelect<String>,
-    ) -> std::result::Result<PlayerSelect<&PlayerInfo>, SMOError> {
+    ) -> Result<PlayerSelect<&PlayerInfo>> {
         let client_names = self.client_names.read().await;
 
         let select = match players {
@@ -282,17 +317,10 @@ impl Coordinator {
             PlayerSelect::SelectPlayers(players) => PlayerSelect::SelectPlayers(
                 players
                     .into_iter()
-                    .map(|name| {
-                        client_names
-                            .get(&name)
-                            .map(|x| *x)
-                            .ok_or_else(|| SMOError::InvalidName(name))
-                    })
+                    .map(|name| client_names.get(&name).ok_or(SMOError::InvalidName(name)))
                     .map(|guid| {
                         let guid = guid?;
-                        self.clients
-                            .get(&guid)
-                            .ok_or_else(|| SMOError::InvalidID(guid))
+                        self.clients.get(guid).ok_or(SMOError::InvalidID(*guid))
                     })
                     .collect::<Result<_>>()?,
             ),
@@ -453,7 +481,7 @@ impl Coordinator {
         self.broadcast(packet)
     }
 
-    async fn disconnect_players(&mut self, players: PlayerSelect<String>) {
+    async fn disconnect_players(&mut self, players: &PlayerSelect<String>) {
         let players = match players {
             PlayerSelect::AllPlayers => todo!(),
             PlayerSelect::SelectPlayers(_) => todo!(),

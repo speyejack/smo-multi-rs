@@ -12,7 +12,7 @@ mod types;
 use crate::types::Result;
 
 use server::Server;
-use settings::Settings;
+use settings::{read_settings, save_settings, Settings};
 use std::{
     fs::File,
     io::{BufReader, BufWriter},
@@ -25,22 +25,6 @@ async fn main() -> Result<()> {
     let server = create_server();
     tracing::info!("Starting server");
     server.spawn_full_server().await
-}
-
-fn read_settings() -> Result<Settings> {
-    let file = File::open("./settings.json")?;
-    let reader = BufReader::new(file);
-    let settings = serde_json::from_reader(reader)?;
-
-    Ok(settings)
-}
-
-fn save_settings(settings: &Settings) -> Result<()> {
-    tracing::debug!("Saving settings");
-    let file = File::create("./settings.json")?;
-    let writer = BufWriter::new(file);
-    serde_json::to_writer_pretty(writer, settings)?;
-    Ok(())
 }
 
 fn create_server() -> Server {
