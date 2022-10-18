@@ -1,7 +1,7 @@
 use crate::{guid::Guid, player_holder::PlayerSelect, settings::FlipPovSettings};
-use std::{convert::Infallible, fmt::Display, str::FromStr};
+use std::{convert::Infallible, str::FromStr};
 
-use clap::{Subcommand, ValueEnum};
+use clap::Subcommand;
 
 #[derive(Subcommand, Debug, Clone)]
 #[clap(rename_all = "lower")]
