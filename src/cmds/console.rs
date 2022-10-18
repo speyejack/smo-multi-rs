@@ -1,5 +1,5 @@
-use crate::{coordinator::PlayerSelect, guid::Guid};
-use std::{convert::Infallible, str::FromStr};
+use crate::{guid::Guid, player_holder::PlayerSelect, settings::FlipPovSettings};
+use std::{convert::Infallible, fmt::Display, str::FromStr};
 
 use clap::{Subcommand, ValueEnum};
 
@@ -59,7 +59,7 @@ pub enum TagCommand {
     },
     Start {
         countdown: u8,
-        seekers: String,
+        seekers: Vec<SinglePlayerSelect>,
     },
 }
 
@@ -70,7 +70,7 @@ pub enum FlipCommand {
     Add { player: Guid },
     Remove { player: Guid },
     Set { is_flipped: bool },
-    Pov { value: FlipValues },
+    Pov { value: FlipPovSettings },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -85,7 +85,19 @@ pub enum ShineCommand {
 #[derive(Debug, Clone)]
 pub enum SinglePlayerSelect {
     Player(String),
+    Negate,
     AllPlayers,
+}
+
+impl ToString for SinglePlayerSelect {
+    fn to_string(&self) -> String {
+        match self {
+            SinglePlayerSelect::Player(p) => p,
+            SinglePlayerSelect::Negate => "!",
+            SinglePlayerSelect::AllPlayers => "*",
+        }
+        .to_string()
+    }
 }
 
 impl FromStr for SinglePlayerSelect {
@@ -94,41 +106,40 @@ impl FromStr for SinglePlayerSelect {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(if s == "*" {
             Self::AllPlayers
+        } else if s == "!" {
+            Self::Negate
         } else {
             Self::Player(s.to_string())
         })
     }
 }
 
-impl From<Vec<SinglePlayerSelect>> for PlayerSelect<String> {
-    fn from(players: Vec<SinglePlayerSelect>) -> Self {
-        let players: Option<Vec<_>> = players
-            .into_iter()
-            .map(|x| match x {
-                SinglePlayerSelect::Player(p) => Some(p),
-                SinglePlayerSelect::AllPlayers => None,
-            })
-            .collect();
+impl From<&[SinglePlayerSelect]> for PlayerSelect<String> {
+    fn from(players: &[SinglePlayerSelect]) -> Self {
+        let modifier = players.iter().next();
+        match modifier {
+            Some(SinglePlayerSelect::AllPlayers) => PlayerSelect::AllPlayers,
+            Some(SinglePlayerSelect::Negate) => {
+                let players: Vec<_> = players
+                    .into_iter()
+                    .skip(1)
+                    .map(SinglePlayerSelect::to_string)
+                    .collect();
 
-        match players {
-            Some(x) => PlayerSelect::SelectPlayers(x),
-            None => PlayerSelect::AllPlayers,
+                if players.is_empty() {
+                    PlayerSelect::AllPlayers
+                } else {
+                    PlayerSelect::ExcludePlayers(players)
+                }
+            }
+            _ => {
+                let players = players
+                    .into_iter()
+                    .map(SinglePlayerSelect::to_string)
+                    .collect();
+
+                PlayerSelect::SelectPlayers(players)
+            }
         }
-    }
-}
-
-#[derive(ValueEnum, Clone, Debug)]
-#[clap(rename_all = "lower")]
-pub enum FlipValues {
-    Both,
-    Player,
-    Others,
-}
-
-impl FromStr for FlipValues {
-    type Err = Infallible;
-
-    fn from_str(_s: &str) -> Result<Self, Self::Err> {
-        unimplemented!()
     }
 }

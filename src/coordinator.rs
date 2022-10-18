@@ -1,8 +1,12 @@
 use crate::{
     client::SyncPlayer,
-    cmds::{console::ScenarioCommand, ClientCommand, Command, ConsoleCommand, ServerCommand},
+    cmds::{
+        console::{FlipCommand, ScenarioCommand, ShineCommand, TagCommand},
+        ClientCommand, Command, ConsoleCommand, ServerCommand,
+    },
     guid::Guid,
-    net::{ConnectionType, Packet, PacketData},
+    net::{ConnectionType, Packet, PacketData, TagUpdate},
+    player_holder::{ClientChannel, PlayerHolder, PlayerInfo, PlayerSelect},
     settings::{load_settings, save_settings, SyncSettings},
     types::{ClientInitError, Result, SMOError},
 };
@@ -12,34 +16,37 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::{
+    sync::{broadcast, mpsc, RwLock},
+    time,
+};
 use tracing::{info_span, Instrument};
 
 pub type SyncClientNames = Arc<RwLock<HashMap<String, Guid>>>;
 type SyncShineBag = Arc<RwLock<HashSet<i32>>>;
-type ClientChannel = mpsc::Sender<ClientCommand>;
 
 pub struct Coordinator {
     pub shine_bag: SyncShineBag,
     pub settings: SyncSettings,
-    pub clients: HashMap<Guid, PlayerInfo>,
-    pub client_names: SyncClientNames,
     pub from_clients: mpsc::Receiver<Command>,
     pub cli_broadcast: broadcast::Sender<ClientCommand>,
-}
-
-#[derive(Clone)]
-pub struct PlayerInfo {
-    channel: ClientChannel,
-    data: SyncPlayer,
-}
-
-pub enum PlayerSelect<T> {
-    AllPlayers,
-    SelectPlayers(Vec<T>),
+    players: PlayerHolder,
 }
 
 impl Coordinator {
+    pub fn new(
+        settings: SyncSettings,
+        from_clients: mpsc::Receiver<Command>,
+        cli_broadcast: broadcast::Sender<ClientCommand>,
+    ) -> Self {
+        Coordinator {
+            settings,
+            from_clients,
+            cli_broadcast,
+            shine_bag: Default::default(),
+            players: Default::default(),
+        }
+    }
     pub async fn handle_commands(mut self) -> Result<()> {
         loop {
             let cmd = self.from_clients.recv().await;
@@ -84,7 +91,7 @@ impl Coordinator {
                         stage,
                     } => {
                         if stage == "CapWorldHomeStage" && *scenario_num == 0 {
-                            let client = self.get_client(&packet.id)?;
+                            let client = self.players.get_client(&packet.id)?;
                             let mut data = client.write().await;
                             tracing::info!("Player '{}' starting speedrun", data.name);
                             data.speedrun_start = true;
@@ -93,7 +100,7 @@ impl Coordinator {
                             self.shine_bag.write().await.clear();
                             self.persist_shines().await;
                         } else if stage == "WaterfallWordHomeStage" {
-                            let client = self.get_client(&packet.id)?;
+                            let client = self.players.get_client(&packet.id)?;
                             let mut data = client.write().await;
                             tracing::info!("Enabling shine sync for player '{}'", data.name);
                             let was_speed_run = data.speedrun_start;
@@ -102,7 +109,7 @@ impl Coordinator {
 
                             if was_speed_run {
                                 let client = client.clone();
-                                let channel = self.get_channel(&packet.id)?.clone();
+                                let channel = self.players.get_channel(&packet.id)?.clone();
                                 let shine_bag = self.shine_bag.clone();
                                 tokio::spawn(async move {
                                     tokio::time::sleep(Duration::from_secs(15)).await;
@@ -171,13 +178,13 @@ impl Coordinator {
                 let packet = Packet::new(Guid::default(), data);
 
                 let cmd = ClientCommand::SelfAddressed(packet);
-                let players = self.get_clients(players.into()).await?;
-                self.send_players(players, cmd).await?;
+                let players = self.players.get_clients(&players[..].into()).await?;
+                self.send_players(&players, &cmd).await?;
                 format!("Sent players to {}:{}", stage, scenario)
             }
             ConsoleCommand::List => {
                 let mut player_data = Vec::default();
-                for (guid, data) in self.clients.iter() {
+                for (guid, data) in self.players.clients.iter() {
                     let name = &data.data.read().await.name;
                     player_data.push((guid, name.to_string()));
                 }
@@ -198,15 +205,15 @@ impl Coordinator {
                 };
                 let packet = Packet::new(Guid::default(), data);
                 let cmd = ClientCommand::SelfAddressed(packet);
-                let players = self.get_clients(players.into()).await?;
-                self.send_players(players, cmd).await?;
+                let players = self.players.get_clients(&players[..].into()).await?;
+                self.send_players(&players, &cmd).await?;
                 "Crashed players".to_string()
             }
             ConsoleCommand::Ban { players } => {
-                let players = players.into();
-                self.disconnect_players(&players).await;
+                let players = players[..].into();
+                self.disconnect_players(&players).await?;
 
-                let players = self.players_to_guids(players).await?;
+                let players = self.players.players_to_guids(&players).await?;
                 let mut settings = self.settings.write().await;
 
                 let banned_players = settings
@@ -221,7 +228,7 @@ impl Coordinator {
                 "Banned players".to_string()
             }
             ConsoleCommand::Rejoin { players } => {
-                self.disconnect_players(&players.into()).await;
+                self.disconnect_players(&players[..].into()).await?;
                 "Rejoined players".to_string()
             }
             ConsoleCommand::Scenario(scenario) => match scenario {
@@ -244,22 +251,171 @@ impl Coordinator {
                     }
                 },
             },
-            ConsoleCommand::Tag(tag) => todo!(),
+            ConsoleCommand::Tag(tag) => match tag {
+                TagCommand::Time {
+                    player,
+                    minutes,
+                    seconds,
+                } => {
+                    if seconds >= 60 {
+                        return Err(SMOError::InvalidConsoleArg(
+                            "Invalid number of seconds".to_string(),
+                        ));
+                    }
+
+                    let players = self.players.get_clients(&([player][..]).into()).await?;
+
+                    // TODO test if is_it is the correct default
+                    let tag_packet = PacketData::Tag {
+                        update_type: TagUpdate::Time,
+                        is_it: false,
+                        minutes,
+                        seconds,
+                    };
+                    let packet = Packet::new(Guid::default(), tag_packet);
+
+                    self.send_players(&players, &ClientCommand::Packet(packet))
+                        .await?;
+                    format!("Set time for players to {}:{}", minutes, seconds)
+                }
+                TagCommand::Seeking { player, is_seeking } => {
+                    let players = self.players.get_clients(&([player][..]).into()).await?;
+                    // TODO test if times are the correct default
+                    let tag_packet = PacketData::Tag {
+                        update_type: TagUpdate::State,
+                        is_it: is_seeking,
+                        minutes: 0,
+                        seconds: 0,
+                    };
+                    let packet = Packet::new(Guid::default(), tag_packet);
+
+                    self.send_players(&players, &ClientCommand::Packet(packet))
+                        .await?;
+                    format!("Changed is_seeking state to {}", is_seeking)
+                }
+                TagCommand::Start { countdown, seekers } => {
+                    let seeker_ids = seekers[..].into();
+                    let seekers = self.players.get_clients(&seeker_ids).await?;
+                    let hiders = self.players.get_clients(&!seeker_ids).await?;
+
+                    time::sleep(Duration::from_secs(countdown.into())).await;
+
+                    let seeker_packet = PacketData::Tag {
+                        update_type: TagUpdate::State,
+                        is_it: true,
+                        seconds: 0,
+                        minutes: 0,
+                    };
+                    let seeker_packet =
+                        ClientCommand::SelfAddressed(Packet::new(Guid::default(), seeker_packet));
+
+                    let hider_packet = PacketData::Tag {
+                        update_type: TagUpdate::State,
+                        is_it: false,
+                        seconds: 0,
+                        minutes: 0,
+                    };
+                    let hider_packet =
+                        ClientCommand::SelfAddressed(Packet::new(Guid::default(), hider_packet));
+
+                    self.send_players(&seekers, &seeker_packet).await?;
+                    self.send_players(&hiders, &hider_packet).await?;
+                    "Started game after {countdown} seconds.".to_string()
+                }
+            },
             ConsoleCommand::MaxPlayers { player_count } => {
                 let mut settings = self.settings.write().await;
                 settings.server.max_players = player_count;
-                save_settings(&settings);
+                save_settings(&settings)?;
                 drop(settings);
-                self.disconnect_players(&PlayerSelect::AllPlayers).await;
+                self.disconnect_players(&PlayerSelect::AllPlayers).await?;
                 format!("Saved and set max players to {}", player_count)
             }
-            ConsoleCommand::Flip(_) => todo!(),
-            ConsoleCommand::Shine(_) => todo!(),
+
+            ConsoleCommand::Flip(flip) => match flip {
+                FlipCommand::List => {
+                    let settings = self.settings.read().await;
+                    let player_str: Vec<String> = settings
+                        .flip
+                        .players
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect();
+                    drop(settings);
+                    format!("User ids: {}", &player_str.join(", "))
+                }
+                FlipCommand::Add { player } => {
+                    let mut settings = self.settings.write().await;
+                    settings.flip.players.insert(player);
+                    save_settings(&settings)?;
+                    drop(settings);
+                    format!("Added {} to flipped players", player)
+                }
+                FlipCommand::Remove { player } => {
+                    let mut settings = self.settings.write().await;
+                    let was_removed = settings.flip.players.remove(&player);
+                    save_settings(&settings)?;
+                    drop(settings);
+                    match was_removed {
+                        true => format!("Removed {} to flipped players", player),
+                        false => format!("User {} wasn't in the flipped players list", player),
+                    }
+                }
+                FlipCommand::Set { is_flipped } => {
+                    let mut settings = self.settings.write().await;
+                    settings.flip.enabled = is_flipped;
+                    save_settings(&settings)?;
+                    if is_flipped {
+                        "Enabled player flipping".to_string()
+                    } else {
+                        "Disabled player flipping".to_string()
+                    }
+                }
+                FlipCommand::Pov { value } => {
+                    let mut settings = self.settings.write().await;
+                    settings.flip.pov = value;
+                    save_settings(&settings)?;
+                    format!("Point of view set to {}", value)
+                }
+            },
+            ConsoleCommand::Shine(shine) => match shine {
+                ShineCommand::List => {
+                    let shines = self.shine_bag.read().await;
+                    let str_shines = shines
+                        .iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ");
+                    str_shines
+                }
+                ShineCommand::Clear => {
+                    self.shine_bag.write().await.clear();
+                    for player in self.players.clients.values() {
+                        player.data.write().await.shine_sync.clear();
+                    }
+                    "Cleared shine bags".to_string()
+                }
+                ShineCommand::Sync => {
+                    self.sync_all_shines().await?;
+                    "Synced shine bag automatically".to_string()
+                }
+                ShineCommand::Send { id, player } => {
+                    let players = self.players.get_clients(&[player][..].into()).await?;
+                    let shine_packet = PacketData::Shine {
+                        shine_id: id.try_into().expect("Could not convert shine id"),
+                        is_grand: false,
+                    };
+                    let packet = Packet::new(Guid::default(), shine_packet);
+                    self.send_players(&players, &ClientCommand::SelfAddressed(packet))
+                        .await?;
+                    format!("Send shine num {}", id)
+                }
+            },
             ConsoleCommand::LoadSettings => {
                 let mut settings = self.settings.write().await;
                 let new_settings = load_settings()?;
                 *settings = new_settings;
-                format!("Loaded settings.json")
+                "Loaded settings.json".to_string()
             }
         };
         Ok(string)
@@ -276,72 +432,23 @@ impl Coordinator {
         tracing::warn!("Shine persisting not avaliable.")
     }
 
-    fn get_client_info(&self, id: &Guid) -> std::result::Result<&PlayerInfo, SMOError> {
-        self.clients.get(id).ok_or(SMOError::InvalidID(*id))
-    }
-
-    fn get_client(&self, id: &Guid) -> std::result::Result<&SyncPlayer, SMOError> {
-        self.get_client_info(id).map(|x| &x.data)
-    }
-
-    fn get_channel(&self, id: &Guid) -> std::result::Result<&ClientChannel, SMOError> {
-        self.get_client_info(id).map(|x| &x.channel)
-    }
-
-    async fn players_to_guids(&self, players: PlayerSelect<String>) -> Result<Vec<Guid>> {
-        let client_names = self.client_names.read().await;
-
-        let select: Result<Vec<Guid>> = match players {
-            PlayerSelect::AllPlayers => Ok(self.clients.keys().copied().collect()),
-            PlayerSelect::SelectPlayers(players) => players
-                .into_iter()
-                .map(|name| {
-                    client_names
-                        .get(&name)
-                        .copied()
-                        .ok_or(SMOError::InvalidName(name))
-                })
-                .collect::<Result<Vec<_>>>(),
-        };
-        select
-    }
-
-    async fn get_clients(
-        &self,
-        players: PlayerSelect<String>,
-    ) -> Result<PlayerSelect<&PlayerInfo>> {
-        let client_names = self.client_names.read().await;
-
-        let select = match players {
-            PlayerSelect::AllPlayers => PlayerSelect::AllPlayers,
-            PlayerSelect::SelectPlayers(players) => PlayerSelect::SelectPlayers(
-                players
-                    .into_iter()
-                    .map(|name| client_names.get(&name).ok_or(SMOError::InvalidName(name)))
-                    .map(|guid| {
-                        let guid = guid?;
-                        self.clients.get(guid).ok_or(SMOError::InvalidID(*guid))
-                    })
-                    .collect::<Result<_>>()?,
-            ),
-        };
-        Ok(select)
-    }
-
     async fn send_players(
         &self,
-        players: PlayerSelect<&PlayerInfo>,
-        cmd: ClientCommand,
+        players: &PlayerSelect<&PlayerInfo>,
+        cmd: &ClientCommand,
     ) -> Result<()> {
         match players {
             PlayerSelect::AllPlayers => {
-                self.cli_broadcast.send(cmd)?;
+                self.cli_broadcast.send(cmd.clone())?;
             }
             PlayerSelect::SelectPlayers(players) => {
                 for p in players {
                     let cli = &p.channel;
                     cli.send(cmd.clone()).await?;
                 }
+            }
+            PlayerSelect::ExcludePlayers(_players) => {
+                unimplemented!("Excluded players not available to send to.")
             }
         };
         Ok(())
@@ -373,11 +480,11 @@ impl Coordinator {
             let banned_players = &settings.ban_list.players;
             let banned_ips = &settings.ban_list.ips;
 
-            if max_players < self.clients.len() {
+            if max_players < self.players.clients.len() {
                 tracing::warn!(
                     "Reached max players: {} <= {}",
                     max_players,
-                    self.clients.len()
+                    self.players.clients.len()
                 );
                 Err(SMOError::ClientInit(ClientInitError::TooManyPlayers))
             } else if banned_players.contains(&cli.guid) {
@@ -398,7 +505,7 @@ impl Coordinator {
 
         let data = match connection_type {
             ConnectionType::FirstConnection => cli.player.clone(),
-            ConnectionType::Reconnecting => match self.clients.remove(&id) {
+            ConnectionType::Reconnecting => match self.players.clients.remove(&id) {
                 Some(PlayerInfo {
                     data: prev_data, ..
                 }) => {
@@ -412,8 +519,12 @@ impl Coordinator {
         let cli_name = cli.player.read().await.name.clone();
         let cli_guid = cli.guid;
 
-        self.client_names.write().await.insert(cli_name, cli_guid);
-        self.clients.insert(
+        self.players
+            .client_names
+            .write()
+            .await
+            .insert(cli_name, cli_guid);
+        self.players.clients.insert(
             id,
             PlayerInfo {
                 channel: comm.clone(),
@@ -438,7 +549,7 @@ impl Coordinator {
         tracing::debug!(
             "Setting up player ({}) with {} other players",
             packet.id,
-            self.clients.len() - 1,
+            self.players.clients.len() - 1,
         );
         let settings = self.settings.read().await;
         let max_player = settings.server.max_players;
@@ -450,7 +561,7 @@ impl Coordinator {
             PlayerInfo {
                 data: other_cli, ..
             },
-        ) in self.clients.iter()
+        ) in self.players.clients.iter()
         {
             let other_cli = other_cli.read().await;
 
@@ -481,12 +592,12 @@ impl Coordinator {
         self.broadcast(packet)
     }
 
-    async fn disconnect_players(&mut self, players: &PlayerSelect<String>) {
-        let players = match players {
-            PlayerSelect::AllPlayers => todo!(),
-            PlayerSelect::SelectPlayers(_) => todo!(),
-        };
-        todo!()
+    async fn disconnect_players(&mut self, players: &PlayerSelect<String>) -> Result<()> {
+        let guids = self.players.players_to_guids(players).await?;
+        for guid in guids {
+            self.disconnect_player(guid).await?;
+        }
+        Ok(())
     }
 
     async fn disconnect_player(&mut self, guid: Guid) -> Result<()> {
@@ -494,10 +605,10 @@ impl Coordinator {
         if let Some(PlayerInfo {
             data,
             channel: comm,
-        }) = self.clients.remove(&guid)
+        }) = self.players.clients.remove(&guid)
         {
             let name = &data.read().await.name;
-            self.client_names.write().await.remove(name);
+            self.players.client_names.write().await.remove(name);
             let packet = Packet::new(guid, PacketData::Disconnect);
             self.broadcast(packet.clone())?;
             let disconnect = ClientCommand::Packet(packet);
@@ -514,14 +625,14 @@ impl Coordinator {
                 channel,
                 data: player,
             },
-        ) in &self.clients
+        ) in &self.players.clients
         {
             let sender_guid = Guid::default();
             client_sync_shines(
                 channel.clone(),
                 self.shine_bag.clone(),
                 &sender_guid,
-                player,
+                &player,
             )
             .await?;
         }
@@ -538,7 +649,7 @@ impl Coordinator {
     }
 
     async fn shutdown(mut self) {
-        let active_clients = self.clients.clone();
+        let active_clients = self.players.clients.clone();
         for guid in active_clients.keys() {
             let _ = self.disconnect_player(*guid).await;
         }

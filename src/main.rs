@@ -5,6 +5,7 @@ mod coordinator;
 mod guid;
 mod listener;
 mod net;
+mod player_holder;
 mod server;
 mod settings;
 mod types;

@@ -1,17 +1,13 @@
 use crate::{
     cmds::ClientCommand,
     console::parse_commands,
-    coordinator::{Coordinator, SyncClientNames},
+    coordinator::Coordinator,
     listener::Listener,
     settings::{Settings, SyncSettings},
     types::Result,
 };
 
-use std::{
-    collections::{HashMap, HashSet},
-    net::SocketAddr,
-    sync::Arc,
-};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{broadcast, mpsc, RwLock};
 
 use crate::cmds::Command;
@@ -42,14 +38,7 @@ impl Server {
             listener: None,
         };
 
-        let coord = Coordinator {
-            shine_bag: Arc::new(RwLock::new(HashSet::default())),
-            from_clients,
-            settings: settings.clone(),
-            clients: HashMap::new(),
-            client_names: SyncClientNames::default(),
-            cli_broadcast: cli_broadcast.clone(),
-        };
+        let coord = Coordinator::new(settings.clone(), from_clients, cli_broadcast.clone());
 
         Server {
             settings,

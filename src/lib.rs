@@ -5,6 +5,7 @@ pub mod coordinator;
 pub mod guid;
 pub mod listener;
 pub mod net;
+pub mod player_holder;
 pub mod server;
 pub mod settings;
 pub mod test;

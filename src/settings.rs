@@ -1,15 +1,21 @@
 use std::{
     collections::HashSet,
+    fmt::Display,
     fs::File,
     io::{BufReader, BufWriter},
     net::IpAddr,
+    str::FromStr,
     sync::Arc,
 };
 
+use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::{guid::Guid, types::Result};
+use crate::{
+    guid::Guid,
+    types::{Result, SMOError},
+};
 
 pub type SyncSettings = Arc<RwLock<Settings>>;
 
@@ -40,12 +46,41 @@ pub struct FlipSettings {
     pub pov: FlipPovSettings,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, ValueEnum)]
 #[serde(rename_all = "PascalCase")]
+#[clap(rename_all = "lower")]
 pub enum FlipPovSettings {
     Both,
     Player,
     Others,
+}
+
+impl FromStr for FlipPovSettings {
+    type Err = SMOError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        if s == "both" {
+            Ok(Self::Both)
+        } else if s == "self" || s == "players" {
+            Ok(Self::Player)
+        } else if s == "others" {
+            Ok(Self::Others)
+        } else {
+            Err(SMOError::InvalidConsoleArg(
+                "Invalid Flip POV Settings".to_string(),
+            ))
+        }
+    }
+}
+
+impl Display for FlipPovSettings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FlipPovSettings::Both => write!(f, "both"),
+            FlipPovSettings::Player => write!(f, "self"),
+            FlipPovSettings::Others => write!(f, "others"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

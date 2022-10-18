@@ -19,6 +19,8 @@ pub enum SMOError {
     InvalidID(Guid),
     #[error("Invalid username")]
     InvalidName(String),
+    #[error("Invalid console command argument")]
+    InvalidConsoleArg(String),
     #[error("Invalid encoding: {0}")]
     Encoding(#[from] EncodingError),
     #[error("Bad IO: {0}")]
