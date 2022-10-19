@@ -1,7 +1,11 @@
-use crate::{cmds::ClientCommand, types::Result};
+use crate::{
+    cmds::{ClientCommand, ServerWideCommand},
+    types::Result,
+};
 use std::net::SocketAddr;
 use tokio::{
     net::TcpListener,
+    select,
     sync::{broadcast, mpsc},
 };
 
@@ -10,6 +14,7 @@ use crate::{client::Client, cmds::Command, settings::SyncSettings};
 pub struct Listener {
     pub to_coord: mpsc::Sender<Command>,
     pub cli_broadcast: broadcast::Sender<ClientCommand>,
+    pub server_broadcast: broadcast::Receiver<ServerWideCommand>,
     pub settings: SyncSettings,
     pub tcp_bind_addr: SocketAddr,
     pub udp_port_addrs: Option<(u16, u16)>,
@@ -35,7 +40,19 @@ impl Listener {
         let mut udp_offset = 0;
 
         loop {
-            let (socket, addr) = listener.accept().await?;
+            let (socket, addr) = select! {
+                conn = listener.accept() => {
+                    conn?
+                }
+                serv_cmd = self.server_broadcast.recv() => {
+                    if let Ok(ServerWideCommand::Shutdown) = serv_cmd {
+                        break Ok(())
+                    } else {
+                        continue
+                    }
+
+                }
+            };
 
             // Fast fail any banned ips before resource allocation
             {

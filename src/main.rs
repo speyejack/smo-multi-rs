@@ -13,22 +13,21 @@ mod types;
 use crate::types::Result;
 
 use server::Server;
-use settings::{read_settings, save_settings, Settings};
-use std::{
-    fs::File,
-    io::{BufReader, BufWriter},
-};
+use settings::{load_settings, save_settings};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing::info!("Creating server");
-    let server = create_server();
-    tracing::info!("Starting server");
-    server.spawn_full_server().await
+    setup_env();
+    loop {
+        tracing::info!("Creating server");
+        let server = create_server();
+        tracing::info!("Starting server");
+        server.spawn_full_server().await?
+    }
 }
 
-fn create_server() -> Server {
+fn setup_env() {
     // TODO Remove tihs debug panic option
     let default_panic = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -39,8 +38,10 @@ fn create_server() -> Server {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();
+}
 
-    let settings = read_settings().unwrap_or_default();
+fn create_server() -> Server {
+    let settings = load_settings().unwrap_or_default();
     save_settings(&settings).expect("Failed to save config");
 
     Server::build_server(settings)

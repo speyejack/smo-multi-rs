@@ -1,7 +1,7 @@
 use std::{num::TryFromIntError, str::Utf8Error};
 
 use crate::{
-    cmds::{ClientCommand, Command},
+    cmds::{ClientCommand, Command, ServerWideCommand},
     guid::Guid,
 };
 use hex::FromHexError;
@@ -37,6 +37,8 @@ pub enum SMOError {
     JsonError(#[from] serde_json::Error),
     #[error("Udp not initialized")]
     UdpNotInit,
+    #[error("Server being shutdown")]
+    ServerShutdown,
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -56,10 +58,14 @@ pub enum ChannelError {
     SendChannel(#[from] SendError<Command>),
     #[error("Sending client channel error")]
     SendClientChannel(#[from] SendError<ClientCommand>),
-    #[error("Sending channel error")]
-    SendBroadcastChannel(#[from] broadcast::error::SendError<ClientCommand>),
-    #[error("Receiving broadcast channel error")]
+
+    #[error("Client broadcast channel sending error")]
+    SendClientBroadcastChannel(#[from] broadcast::error::SendError<ClientCommand>),
+    #[error("Server broadcast channel sending error")]
+    SendServerBroadcastChannel(#[from] broadcast::error::SendError<ServerWideCommand>),
+    #[error("Client broadcast channel receiving error")]
     RecvBroadcastChannel(#[from] broadcast::error::RecvError),
+
     #[error("Reply channel recv error")]
     ReplyChannel(#[from] oneshot::error::RecvError),
     #[error("Receiving error")]

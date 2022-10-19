@@ -29,16 +29,24 @@ impl Server {
         let settings = Arc::new(RwLock::new(settings));
         let (cli_broadcast, _) = broadcast::channel(100);
 
+        let (serv_send, serv_recv) = broadcast::channel(1);
         let listener = Listener {
+            server_broadcast: serv_recv,
             settings: settings.clone(),
             to_coord: to_coord.clone(),
             cli_broadcast: cli_broadcast.clone(),
+
             tcp_bind_addr: local_bind_addr,
             udp_port_addrs: Some((51888, 32)),
             listener: None,
         };
 
-        let coord = Coordinator::new(settings.clone(), from_clients, cli_broadcast.clone());
+        let coord = Coordinator::new(
+            settings.clone(),
+            from_clients,
+            cli_broadcast.clone(),
+            serv_send,
+        );
 
         Server {
             settings,
@@ -62,9 +70,10 @@ impl Server {
     }
 
     pub async fn spawn_full_server(self) -> Result<()> {
+        let rx = self.coord.server_broadcast.subscribe();
         let serv_task = tokio::task::spawn(self.listener.listen_for_clients());
         let coord_task = tokio::task::spawn(self.coord.handle_commands());
-        let parser_task = tokio::task::spawn(parse_commands(self.to_coord.clone()));
+        let parser_task = tokio::task::spawn(parse_commands(self.to_coord.clone(), rx));
 
         let _results = tokio::join!(serv_task, coord_task, parser_task);
         Ok(())

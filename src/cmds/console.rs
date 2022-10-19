@@ -37,6 +37,7 @@ pub enum ConsoleCommand {
     #[clap(subcommand)]
     Shine(ShineCommand),
     LoadSettings,
+    Restart,
 }
 
 #[derive(Subcommand, Debug, Clone)]

@@ -2,7 +2,7 @@ use crate::{
     client::SyncPlayer,
     cmds::{
         console::{FlipCommand, ScenarioCommand, ShineCommand, TagCommand},
-        ClientCommand, Command, ConsoleCommand, ServerCommand,
+        ClientCommand, Command, ConsoleCommand, ServerCommand, ServerWideCommand,
     },
     guid::Guid,
     net::{ConnectionType, Packet, PacketData, TagUpdate},
@@ -30,6 +30,7 @@ pub struct Coordinator {
     pub settings: SyncSettings,
     pub from_clients: mpsc::Receiver<Command>,
     pub cli_broadcast: broadcast::Sender<ClientCommand>,
+    pub server_broadcast: broadcast::Sender<ServerWideCommand>,
     players: PlayerHolder,
 }
 
@@ -38,11 +39,13 @@ impl Coordinator {
         settings: SyncSettings,
         from_clients: mpsc::Receiver<Command>,
         cli_broadcast: broadcast::Sender<ClientCommand>,
+        server_broadcast: broadcast::Sender<ServerWideCommand>,
     ) -> Self {
         Coordinator {
             settings,
             from_clients,
             cli_broadcast,
+            server_broadcast,
             shine_bag: Default::default(),
             players: Default::default(),
         }
@@ -71,7 +74,6 @@ impl Coordinator {
             Command::Server(sc) => match sc {
                 ServerCommand::NewPlayer { .. } => self.add_client(sc).await?,
                 ServerCommand::DisconnectPlayer { guid } => self.disconnect_player(guid).await?,
-                ServerCommand::Shutdown => return Ok(false),
             },
             Command::Packet(packet) => {
                 match &packet.data {
@@ -142,6 +144,12 @@ impl Coordinator {
             }
             Command::Console(cmd, reply) => {
                 let result = self.handle_console_cmd(cmd).await;
+
+                if let Err(SMOError::ServerShutdown) = result {
+                    self.server_broadcast.send(ServerWideCommand::Shutdown)?;
+                    return Ok(false);
+                }
+
                 reply.send(result).expect("Reply channel failed")
             }
         }
@@ -150,6 +158,7 @@ impl Coordinator {
 
     async fn handle_console_cmd(&mut self, cmd: ConsoleCommand) -> Result<String> {
         let string: String = match cmd {
+            ConsoleCommand::Restart => return Err(SMOError::ServerShutdown),
             ConsoleCommand::SendAll { stage } => {
                 let stage = unalias_map(&stage);
                 let data = PacketData::ChangeStage {
@@ -168,6 +177,10 @@ impl Coordinator {
                 scenario,
                 players,
             } => {
+                if players.is_empty() {
+                    return Err(SMOError::InvalidConsoleArg("Players empty".to_string()));
+                }
+
                 let stage = unalias_map(&stage);
                 let data = PacketData::ChangeStage {
                     stage: stage.clone(),
@@ -197,6 +210,10 @@ impl Coordinator {
                 format!("List: \n\t{}", player_strs.join("\n\t"))
             }
             ConsoleCommand::Crash { players } => {
+                if players.is_empty() {
+                    return Err(SMOError::InvalidConsoleArg("Players empty".to_string()));
+                }
+
                 let data = PacketData::ChangeStage {
                     id: "$among$us/SubArea".to_string(),
                     stage: "$agogusStage".to_string(),
@@ -210,6 +227,10 @@ impl Coordinator {
                 "Crashed players".to_string()
             }
             ConsoleCommand::Ban { players } => {
+                if players.is_empty() {
+                    return Err(SMOError::InvalidConsoleArg("Players empty".to_string()));
+                }
+
                 let players = players[..].into();
                 self.disconnect_players(&players).await?;
 
@@ -228,6 +249,10 @@ impl Coordinator {
                 "Banned players".to_string()
             }
             ConsoleCommand::Rejoin { players } => {
+                if players.is_empty() {
+                    return Err(SMOError::InvalidConsoleArg("Players empty".to_string()));
+                }
+
                 self.disconnect_players(&players[..].into()).await?;
                 "Rejoined players".to_string()
             }
@@ -274,7 +299,7 @@ impl Coordinator {
                     };
                     let packet = Packet::new(Guid::default(), tag_packet);
 
-                    self.send_players(&players, &ClientCommand::Packet(packet))
+                    self.send_players(&players, &ClientCommand::SelfAddressed(packet))
                         .await?;
                     format!("Set time for players to {}:{}", minutes, seconds)
                 }
@@ -289,7 +314,7 @@ impl Coordinator {
                     };
                     let packet = Packet::new(Guid::default(), tag_packet);
 
-                    self.send_players(&players, &ClientCommand::Packet(packet))
+                    self.send_players(&players, &ClientCommand::SelfAddressed(packet))
                         .await?;
                     format!("Changed is_seeking state to {}", is_seeking)
                 }

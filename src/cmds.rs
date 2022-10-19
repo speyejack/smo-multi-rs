@@ -17,3 +17,8 @@ pub enum Command {
     Console(ConsoleCommand, ReplyChannel<Result<String, SMOError>>),
     Server(ServerCommand),
 }
+
+#[derive(Debug, Clone)]
+pub enum ServerWideCommand {
+    Shutdown,
+}

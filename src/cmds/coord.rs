@@ -14,5 +14,4 @@ pub enum ServerCommand {
     DisconnectPlayer {
         guid: Guid,
     },
-    Shutdown,
 }
