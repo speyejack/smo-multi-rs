@@ -1,7 +1,7 @@
 use crate::{
     cmds::ClientCommand,
     console::parse_commands,
-    coordinator::Coordinator,
+    coordinator::{load_shines, Coordinator, ShineBag},
     listener::Listener,
     settings::{Settings, SyncSettings},
     types::Result,
@@ -26,6 +26,23 @@ impl Server {
 
         let local_bind_addr = SocketAddr::new(settings.server.address, settings.server.port);
 
+        let shines = if settings.persist_shines.enabled {
+            let result = load_shines(&settings.persist_shines.filename);
+
+            match result {
+                Ok(bag) => bag,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load shine bag using empty shine bag instead: {}",
+                        e
+                    );
+                    ShineBag::default()
+                }
+            }
+        } else {
+            ShineBag::default()
+        };
+
         let settings = Arc::new(RwLock::new(settings));
         let (cli_broadcast, _) = broadcast::channel(100);
 
@@ -46,6 +63,7 @@ impl Server {
             from_clients,
             cli_broadcast.clone(),
             serv_send,
+            shines,
         );
 
         Server {

@@ -17,6 +17,8 @@ use std::{
     time::Duration,
 };
 use tokio::{
+    fs::File,
+    io::{AsyncReadExt, AsyncWriteExt},
     sync::{broadcast, mpsc, RwLock},
     time,
 };
@@ -41,13 +43,14 @@ impl Coordinator {
         from_clients: mpsc::Receiver<Command>,
         cli_broadcast: broadcast::Sender<ClientCommand>,
         server_broadcast: broadcast::Sender<ServerWideCommand>,
+        shine_bag: ShineBag,
     ) -> Self {
         Coordinator {
             settings,
             from_clients,
             cli_broadcast,
             server_broadcast,
-            shine_bag: Default::default(),
+            shine_bag: Arc::new(RwLock::new(shine_bag)),
             players: Default::default(),
         }
     }
@@ -457,8 +460,17 @@ impl Coordinator {
     }
 
     async fn persist_shines(&self) {
-        // TODO
-        tracing::warn!("Shine persisting not avaliable.")
+        let settings = self.settings.read().await;
+        if settings.persist_shines.enabled {
+            let filename = settings.persist_shines.filename.clone();
+            let shines = self.shine_bag.clone();
+            tokio::spawn(async move {
+                let result = save_shines(filename, shines).await;
+                if let Err(e) = result {
+                    tracing::error!("Error saving shines: {}", e);
+                }
+            });
+        }
     }
 
     async fn send_players(
