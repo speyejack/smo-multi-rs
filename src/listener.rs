@@ -60,7 +60,8 @@ impl Listener {
                 let banned_ips = &settings.ban_list.ips;
 
                 if banned_ips.contains(&addr.ip()) {
-                    tracing::warn!("Banned ip tried to connect: {}", addr.ip())
+                    tracing::warn!("Banned ip tried to connect: {}", addr.ip());
+                    continue;
                 }
             }
 
