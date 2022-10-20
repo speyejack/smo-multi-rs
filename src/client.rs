@@ -125,7 +125,11 @@ impl Client {
 
     /// Handle any incoming packets from the client
     async fn handle_packet(&mut self, packet: Packet) -> Result<()> {
-        tracing::trace!("Handling packet: {}", &packet.data.get_type_name());
+        match packet.data {
+            PacketData::Player { .. } | PacketData::Cap { .. } => {}
+            _ => tracing::trace!("Handling packet: {}", &packet.data.get_type_name()),
+        }
+
         let send_destination = match &packet.data {
             PacketData::Costume(costume) => {
                 // TODO: Figure out why shine sync code in original
