@@ -92,19 +92,19 @@ impl Coordinator {
                         scenario_num,
                         stage,
                     } => {
+                        tracing::debug!("Got game packet {}->{}", stage, scenario_num);
+                        let client = self.players.get_client(&packet.id)?;
                         if stage == "CapWorldHomeStage" && *scenario_num == 0 {
-                            let client = self.players.get_client(&packet.id)?;
                             let mut data = client.write().await;
-                            tracing::info!("Player '{}' starting speedrun", data.name);
+                            tracing::debug!("Player '{}' started new save", data.name);
                             data.speedrun_start = true;
                             data.shine_sync.clear();
                             drop(data);
                             self.shine_bag.write().await.clear();
                             self.persist_shines().await;
                         } else if stage == "WaterfallWordHomeStage" {
-                            let client = self.players.get_client(&packet.id)?;
                             let mut data = client.write().await;
-                            tracing::info!("Enabling shine sync for player '{}'", data.name);
+                            tracing::debug!("Enabling shine sync for player '{}'", data.name);
                             let was_speed_run = data.speedrun_start;
                             data.speedrun_start = false;
                             drop(data);
@@ -125,17 +125,19 @@ impl Coordinator {
                                 });
                             }
 
-                            let merge_scenario = client
-                                .read()
-                                .await
-                                .settings
-                                .read()
-                                .await
-                                .scenario
-                                .merge_enabled;
-                            if merge_scenario {
-                                self.merge_scenario(&packet).await?;
-                            }
+                        }
+                        tracing::debug!("Changing scenarios: {} {}", scenario_num, stage);
+
+                        let merge_scenario = client
+                            .read()
+                            .await
+                            .settings
+                            .read()
+                            .await
+                            .scenario
+                            .merge_enabled;
+                        if merge_scenario {
+                            self.merge_scenario(&packet).await?;
                         }
                     }
                     _ => {}
