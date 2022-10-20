@@ -521,7 +521,7 @@ impl Coordinator {
             let banned_players = &settings.ban_list.players;
             let banned_ips = &settings.ban_list.ips;
 
-            if max_players < self.players.clients.len() {
+            if max_players <= self.players.clients.len() {
                 tracing::warn!(
                     "Reached max players: {} <= {}",
                     max_players,
