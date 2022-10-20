@@ -124,7 +124,6 @@ impl Coordinator {
                                     }
                                 });
                             }
-
                         }
                         tracing::debug!("Changing scenarios: {} {}", scenario_num, stage);
 
@@ -325,6 +324,7 @@ impl Coordinator {
                     let seekers = self.players.get_clients(&seeker_ids).await?;
                     let hiders = self.players.get_clients(&!seeker_ids).await?;
 
+                    // TODO make this a separate task
                     time::sleep(Duration::from_secs(countdown.into())).await;
 
                     let seeker_packet = PacketData::Tag {
@@ -449,6 +449,7 @@ impl Coordinator {
     }
 
     async fn merge_scenario(&self, packet: &Packet) -> Result<()> {
+        tracing::debug!("Merging scenario");
         self.cli_broadcast
             .send(ClientCommand::SelfAddressed(packet.clone()))?;
         Ok(())
@@ -669,9 +670,6 @@ impl Coordinator {
     fn broadcast(&mut self, mut p: Packet) -> Result<()> {
         p.resize();
         self.cli_broadcast.send(ClientCommand::Packet(p.clone()))?;
-        // for (cli, _) in &mut self.clients.values() {
-        //     cli.send(ClientCommand::Packet(p.clone())).await?;
-        // }
         Ok(())
     }
 
