@@ -23,7 +23,8 @@ use tokio::{
 use tracing::{info_span, Instrument};
 
 pub type SyncClientNames = Arc<RwLock<HashMap<String, Guid>>>;
-type SyncShineBag = Arc<RwLock<HashSet<i32>>>;
+pub type SyncShineBag = Arc<RwLock<ShineBag>>;
+pub type ShineBag = HashSet<i32>;
 
 pub struct Coordinator {
     pub shine_bag: SyncShineBag,
