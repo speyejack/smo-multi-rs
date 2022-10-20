@@ -734,3 +734,19 @@ fn unalias_map(alias: &str) -> String {
 
     unalias.to_string()
 }
+
+async fn save_shines(filename: String, shines: SyncShineBag) -> Result<()> {
+    let shines = shines.read().await;
+    let json_str = serde_json::to_string(&shines.clone())?;
+    let mut file = File::open(filename).await?;
+    file.write_all(json_str.as_bytes()).await?;
+
+    Ok(())
+}
+
+pub fn load_shines(filename: &str) -> Result<ShineBag> {
+    let file = std::fs::File::open(filename)?;
+    let shines = serde_json::from_reader(file)?;
+
+    Ok(shines)
+}
