@@ -75,7 +75,6 @@ impl Client {
         while self.alive {
             let event = self.read_event().await;
 
-            tracing::trace!("Event: {:?}", &event);
             let result = match event {
                 Ok(ClientEvent::Incoming(p)) => self.handle_packet(p).await,
                 Ok(ClientEvent::Outgoing(c)) => self.handle_command(c).await,
@@ -104,7 +103,6 @@ impl Client {
                 ClientEvent::Incoming(packet?)
             },
             udp_packet = self.udp_conn.read_packet() => {
-                tracing::trace!("Got udp event!");
                 ClientEvent::Incoming(udp_packet?)
             },
             command = self.from_server.recv() => ClientEvent::Outgoing(command.ok_or(ChannelError::RecvChannel)?),
@@ -127,7 +125,7 @@ impl Client {
 
     /// Handle any incoming packets from the client
     async fn handle_packet(&mut self, packet: Packet) -> Result<()> {
-        tracing::debug!("Handling packet: {}", &packet.data.get_type_name());
+        tracing::trace!("Handling packet: {}", &packet.data.get_type_name());
         let send_destination = match &packet.data {
             PacketData::Costume(costume) => {
                 // TODO: Figure out why shine sync code in original
@@ -215,13 +213,17 @@ impl Client {
 
     /// Send packet to player using either tcp or udp
     pub async fn send_packet(&mut self, packet: &Packet) -> Result<()> {
-        // TODO Handle disconnect packets
-        tracing::debug!(
-            "Sending packet: {}->{}",
-            packet.id,
-            packet.data.get_type_name()
-        );
-        tracing::debug!("Udp conn: {:?}", self.udp_conn);
+        // Packet logging
+        match packet.data {
+            PacketData::Player { .. } | PacketData::Cap { .. } => {}
+            _ => {
+                tracing::trace!(
+                    "Sending packet: {}->{}",
+                    packet.id,
+                    packet.data.get_type_name()
+                );
+            }
+        }
 
         if self.udp_conn.is_client_udp() {
             // Use UDP traffic

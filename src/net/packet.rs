@@ -45,19 +45,12 @@ impl Packet {
         let header_size = 16 + 2;
         let start_pos = buf.position();
         if buf.remaining() < header_size + 2 {
-            // tracing::debug!(
-            //     "Not enough bytes for header: {} < {}",
-            //     buf.remaining(),
-            //     header_size + 2
-            // );
             return Err(EncodingError::NotEnoughData);
         }
 
         buf.advance(header_size);
         let size = buf.get_u16_le().into();
-        // tracing::info!("Size: {}", size);
         if buf.remaining() < size {
-            tracing::trace!("Not enough bytes for data: {} < {}", buf.remaining(), size);
             return Err(EncodingError::NotEnoughData);
         }
         buf.advance(size);
@@ -210,7 +203,6 @@ where
 {
     fn decode(buf: &mut R) -> std::result::Result<Self, EncodingError> {
         if buf.remaining() < (16 + 2 + 2) {
-            tracing::trace!("Header size failed");
             return Err(EncodingError::NotEnoughData);
         }
 
@@ -220,7 +212,6 @@ where
         let p_size = buf.get_u16_le();
 
         if buf.remaining() < p_size.into() {
-            tracing::trace!("data size failed: {} < {}", buf.remaining(), p_size);
             return Err(EncodingError::NotEnoughData);
         }
 
@@ -309,11 +300,6 @@ where
 
         let excess_padding = p_size as usize - data.get_size();
         if excess_padding > 0 {
-            tracing::trace!(
-                "Removing extra padding from packet {}: {} bytes",
-                data.get_type_name(),
-                excess_padding
-            );
             buf.advance(excess_padding);
         }
 

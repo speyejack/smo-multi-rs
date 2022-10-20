@@ -72,14 +72,12 @@ impl Connection {
     pub async fn write_packet(&mut self, packet: &Packet) -> Result<()> {
         let mut buff = BytesMut::with_capacity(MAX_PACKET_SIZE);
         packet.encode(&mut buff)?;
-        tracing::trace!("Writing packet: {:?}", packet);
         let mut amount = 0;
         while amount < buff.len() {
             let last_write = self.socket.write(&buff[..]).await?;
             amount += last_write;
         }
         self.socket.flush().await?;
-        tracing::trace!("Packet written");
         Ok(())
     }
 }
