@@ -70,6 +70,7 @@ enum PacketDestination {
 }
 
 impl Client {
+    /// Loop over events until an event signals to quit
     pub async fn handle_events(mut self) -> Result<()> {
         while self.alive {
             let event = self.read_event().await;
@@ -96,6 +97,7 @@ impl Client {
         Ok(())
     }
 
+    /// Read an event from either the client sockets or server channels
     async fn read_event(&mut self) -> Result<ClientEvent> {
         let event = select! {
             packet = self.conn.read_packet() => {
@@ -111,6 +113,7 @@ impl Client {
         Ok(event)
     }
 
+    /// Disconnect the player
     pub async fn disconnect(mut self) -> Result<()> {
         tracing::warn!("Client {} disconnected", self.display_name);
         self.to_coord
@@ -122,6 +125,7 @@ impl Client {
         Ok(())
     }
 
+    /// Handle any incoming packets from the client
     async fn handle_packet(&mut self, packet: Packet) -> Result<()> {
         tracing::debug!("Handling packet: {}", &packet.data.get_type_name());
         let send_destination = match &packet.data {
@@ -209,6 +213,7 @@ impl Client {
         Ok(())
     }
 
+    /// Send packet to player using either tcp or udp
     pub async fn send_packet(&mut self, packet: &Packet) -> Result<()> {
         // TODO Handle disconnect packets
         tracing::debug!(
@@ -232,11 +237,13 @@ impl Client {
         }
     }
 
+    /// Readdress packet to come from the same guid as client then send
     pub async fn readdress_and_send(&mut self, p: &mut Packet) -> Result<()> {
         p.id = self.guid;
         self.send_packet(p).await
     }
 
+    /// Perform the initialization and handshake with client then hand off to coordinator
     pub async fn initialize_client(
         socket: TcpStream,
         to_coord: mpsc::Sender<Command>,
