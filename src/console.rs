@@ -55,10 +55,8 @@ async fn parse_command(to_coord: &mut mpsc::Sender<Command>) -> Result<()> {
 fn read_command() -> Result<Cli> {
     let mut input = "> ".to_string();
 
-    // print!("{}", input);
     std::io::stdout().flush()?;
     std::io::stdin().read_line(&mut input)?;
-    tracing::debug!("Got input: {}", input);
     let input = input.trim().split(' ');
     let cli = Cli::try_parse_from(input)?;
     Ok(cli)
