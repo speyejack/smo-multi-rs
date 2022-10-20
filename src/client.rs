@@ -199,18 +199,35 @@ impl Client {
         Ok(())
     }
 
+    /// Handle any commands sent from internal channels
     async fn handle_command(&mut self, command: ClientCommand) -> Result<()> {
         match command {
             ClientCommand::Packet(p) => {
                 if p.id == self.guid {
-                    if let crate::net::PacketData::Disconnect = p.data {
+                    if let PacketData::Disconnect = p.data {
+                        // Disconnect packets handled later
                         self.alive = false;
                     }
                 } else {
                     self.send_packet(&p).await?;
                 }
             }
-            ClientCommand::SelfAddressed(mut p) => self.readdress_and_send(&mut p).await?,
+            ClientCommand::SelfAddressed(mut p) => {
+                // Update local client data with any outgoing packet data
+                match p.data {
+                    PacketData::Shine { shine_id, .. } => {
+                        let mut data = self.player.write().await;
+                        data.shine_sync.insert(shine_id);
+                    }
+                    PacketData::Disconnect {} => {
+                        // Disconnect packets handled later
+                        self.alive = false;
+                    }
+                    _ => {}
+                }
+
+                self.readdress_and_send(&mut p).await?;
+            }
         }
         Ok(())
     }
