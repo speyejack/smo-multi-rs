@@ -697,7 +697,7 @@ async fn client_sync_shines(
 
     for shine_id in mismatch {
         to_client
-            .send(ClientCommand::Packet(Packet::new(
+            .send(ClientCommand::SelfAddressed(Packet::new(
                 *guid,
                 PacketData::Shine {
                     shine_id: *shine_id,
