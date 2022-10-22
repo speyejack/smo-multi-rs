@@ -310,13 +310,15 @@ impl Client {
                     ..PlayerData::default()
                 };
 
-                conn.write_packet(&Packet::new(
-                    Guid::default(),
-                    PacketData::UdpInit {
-                        port: local_udp_addr.port(),
-                    },
-                ))
-                .await?;
+                if start_udp_handshake {
+                    conn.write_packet(&Packet::new(
+                        Guid::default(),
+                        PacketData::UdpInit {
+                            port: local_udp_addr.port(),
+                        },
+                    ))
+                    .await?;
+                }
 
                 let data = Arc::new(RwLock::new(data));
                 let recv_broadcast = broadcast.subscribe();

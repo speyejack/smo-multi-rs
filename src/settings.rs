@@ -28,6 +28,7 @@ pub struct Settings {
     pub ban_list: BanListSettings,
     pub discord: DiscordSettings,
     pub persist_shines: PersistShine,
+    pub udp: Udp,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -112,6 +113,14 @@ pub struct PersistShine {
     pub filename: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct Udp {
+    pub initiate_handshake: bool,
+    pub base_port: u32,
+    pub port_count: u32,
+}
+
 impl Default for ServerSettings {
     fn default() -> Self {
         Self {
@@ -172,6 +181,16 @@ impl Default for PersistShine {
 impl Default for FlipPovSettings {
     fn default() -> Self {
         Self::Both
+    }
+}
+
+impl Default for Udp {
+    fn default() -> Self {
+        Self {
+            initiate_handshake: false,
+            base_port: 0,
+            port_count: 1,
+        }
     }
 }
 
