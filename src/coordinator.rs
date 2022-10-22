@@ -131,14 +131,7 @@ impl Coordinator {
                         }
                         tracing::debug!("Changing scenarios: {} {}", scenario_num, stage);
 
-                        let merge_scenario = client
-                            .read()
-                            .await
-                            .settings
-                            .read()
-                            .await
-                            .scenario
-                            .merge_enabled;
+                        let merge_scenario = self.settings.read().await.scenario.merge_enabled;
                         if merge_scenario {
                             self.merge_scenario(&packet).await?;
                         }

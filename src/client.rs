@@ -39,6 +39,7 @@ pub struct Client {
     pub from_server: mpsc::Receiver<ClientCommand>,
     pub send_broadcast: broadcast::Sender<ClientCommand>,
     pub recv_broadcast: broadcast::Receiver<ClientCommand>,
+    pub settings: SyncSettings,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -52,7 +53,6 @@ pub struct PlayerData {
     pub speedrun_start: bool,
     pub loaded_save: bool,
     pub time: Duration,
-    pub settings: SyncSettings,
     pub costume: Costume,
 }
 
@@ -306,7 +306,6 @@ impl Client {
                 ..
             } => {
                 let data = PlayerData {
-                    settings,
                     name: name.clone(),
                     ..PlayerData::default()
                 };
@@ -329,6 +328,7 @@ impl Client {
                     player: data,
                     guid: connect.id,
                     alive: true,
+                    settings,
                     to_coord,
                     from_server,
                     conn,
