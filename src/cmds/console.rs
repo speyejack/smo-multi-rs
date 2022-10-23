@@ -58,6 +58,7 @@ pub enum TagCommand {
     },
     Seeking {
         player: SinglePlayerSelect,
+        #[arg(action = clap::ArgAction::Set)]
         is_seeking: bool,
     },
     Start {
@@ -70,10 +71,19 @@ pub enum TagCommand {
 #[clap(rename_all = "lower")]
 pub enum FlipCommand {
     List,
-    Add { player: Guid },
-    Remove { player: Guid },
-    Set { is_flipped: bool },
-    Pov { value: FlipPovSettings },
+    Add {
+        player: Guid,
+    },
+    Remove {
+        player: Guid,
+    },
+    Set {
+        #[arg(action = clap::ArgAction::Set)]
+        is_flipped: bool,
+    },
+    Pov {
+        value: FlipPovSettings,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
