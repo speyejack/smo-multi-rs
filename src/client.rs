@@ -209,6 +209,10 @@ impl Client {
                 PacketDestination::Coordinator
             }
             PacketData::UdpInit { port } => {
+                tracing::debug!(
+                    "{} completed udp handshake, attempting hybrid connection",
+                    self.display_name
+                );
                 self.udp_conn.set_client_port(*port);
                 PacketDestination::NoSend
             }
