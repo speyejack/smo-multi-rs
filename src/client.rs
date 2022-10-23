@@ -214,6 +214,9 @@ impl Client {
                     self.display_name
                 );
                 self.udp_conn.set_client_port(*port);
+                // Attempt to send some udp data to client
+                let holepunch = Packet::new(self.guid, PacketData::HolePunch);
+                self.udp_conn.write_packet(&holepunch).await?;
                 PacketDestination::NoSend
             }
             _ => PacketDestination::Broadcast,
