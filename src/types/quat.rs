@@ -10,12 +10,11 @@ where
     R: Buf,
 {
     fn decode(buf: &mut R) -> Result<Self, EncodingError> {
-        Ok(Quaternion::new(
-            buf.get_f32_le(),
-            buf.get_f32_le(),
-            buf.get_f32_le(),
-            buf.get_f32_le(),
-        ))
+        let i = buf.get_f32_le();
+        let j = buf.get_f32_le();
+        let k = buf.get_f32_le();
+        let w = buf.get_f32_le();
+        Ok(Quaternion::new(w, i, j, k))
     }
 }
 
@@ -24,10 +23,10 @@ where
     W: BufMut,
 {
     fn encode(&self, buf: &mut W) -> Result<(), EncodingError> {
-        buf.put_f32_le(self.w);
         buf.put_f32_le(self.i);
         buf.put_f32_le(self.j);
         buf.put_f32_le(self.k);
+        buf.put_f32_le(self.w);
         Ok(())
     }
 }
