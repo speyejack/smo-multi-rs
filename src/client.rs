@@ -236,38 +236,36 @@ impl Client {
     async fn handle_command(&mut self, command: ClientCommand) -> Result<()> {
         match command {
             ClientCommand::Packet(mut p) => {
-                if p.id == self.guid {
-                    match &mut p.data {
-                        PacketData::Disconnect => {
-                            // Disconnect packets handled later
-                            self.alive = false;
-                        }
-                        _ => {}
+                match &mut p.data {
+                    // Same pid handling
+                    PacketData::Disconnect => {
+                        self.alive = false;
+                        // Disconnect packets handled later
+                        return Ok(());
                     }
-                } else {
-                    match &mut p.data {
-                        PacketData::Player {
-                            ref mut pos,
-                            ref mut rot,
-                            ..
-                        } => {
-                            let settings = self.settings.read().await;
-                            if settings.flip.enabled
-                                && settings.flip.pov.is_self_flip()
-                                && settings.flip.players.get(&p.id).is_none()
-                            {
-                                let angle = std::f32::consts::PI;
-                                let rot_quad =
-                                    *(UnitQuaternion::from_axis_angle(&Vector3::z_axis(), angle));
-                                let data = self.player.read().await;
-                                *pos += get_mario_size(data.is_2d) * Vector3::y();
-                                *rot *= rot_quad;
-                            }
+                    _ if p.id == self.guid => return Ok(()),
+                    // Any different pids
+                    PacketData::Player {
+                        ref mut pos,
+                        ref mut rot,
+                        ..
+                    } => {
+                        let settings = self.settings.read().await;
+                        if settings.flip.enabled
+                            && settings.flip.pov.is_self_flip()
+                            && settings.flip.players.get(&p.id).is_none()
+                        {
+                            let angle = std::f32::consts::PI;
+                            let rot_quad =
+                                *(UnitQuaternion::from_axis_angle(&Vector3::z_axis(), angle));
+                            let data = self.player.read().await;
+                            *pos += get_mario_size(data.is_2d) * Vector3::y();
+                            *rot *= rot_quad;
                         }
-                        _ => {}
                     }
-                    self.send_packet(&p).await?;
+                    _ => {}
                 }
+                self.send_packet(&p).await?;
             }
             ClientCommand::SelfAddressed(mut p) => {
                 // Update local client data with any outgoing packet data
