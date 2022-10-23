@@ -98,7 +98,13 @@ pub enum ShineCommand {
 #[derive(Subcommand, Debug, Clone)]
 #[clap(rename_all = "lower")]
 pub enum UdpCommand {
-    Init { player: SinglePlayerSelect },
+    Init {
+        player: SinglePlayerSelect,
+    },
+    Auto {
+        #[arg(action = clap::ArgAction::Set)]
+        should_auto: bool,
+    },
 }
 
 #[derive(Debug, Clone)]

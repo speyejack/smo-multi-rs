@@ -443,6 +443,17 @@ impl Coordinator {
                         .await?;
                     format!("Initiated udp handshakes")
                 }
+                UdpCommand::Auto { should_auto } => {
+                    let mut settings = self.settings.write().await;
+                    settings.udp.initiate_handshake = should_auto;
+                    drop(settings);
+                    if should_auto {
+                        "Enabled auto udp handshake"
+                    } else {
+                        "Disabled auto udp handshake"
+                    }
+                    .to_string()
+                }
             },
             ConsoleCommand::LoadSettings => {
                 let mut settings = self.settings.write().await;
