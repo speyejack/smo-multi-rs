@@ -154,7 +154,6 @@ impl Client {
                     && settings.flip.pov.is_others_flip()
                     && settings.flip.players.get(&packet.id).is_some()
                 {
-                    tracing::trace!("Flippng output");
                     let angle = std::f32::consts::PI;
                     let rot_quad = *(UnitQuaternion::from_axis_angle(&Vector3::z_axis(), angle));
                     let data = self.player.read().await;
@@ -253,7 +252,6 @@ impl Client {
                                 && settings.flip.pov.is_self_flip()
                                 && settings.flip.players.get(&p.id).is_none()
                             {
-                                tracing::trace!("Flippng input");
                                 let angle = std::f32::consts::PI;
                                 let rot_quad =
                                     *(UnitQuaternion::from_axis_angle(&Vector3::z_axis(), angle));
