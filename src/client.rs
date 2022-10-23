@@ -219,6 +219,7 @@ impl Client {
                 self.udp_conn.write_packet(&holepunch).await?;
                 PacketDestination::NoSend
             }
+            PacketData::HolePunch => PacketDestination::NoSend,
             _ => PacketDestination::Broadcast,
         };
 
