@@ -314,17 +314,13 @@ impl Client {
             }
         }
 
-        if self.udp_conn.is_client_udp() {
-            // Use UDP traffic
-            match packet.data {
-                PacketData::Player { .. } | PacketData::Cap { .. } => {
-                    self.udp_conn.write_packet(packet).await
-                }
-                _ => self.conn.write_packet(packet).await,
+        match packet.data {
+            // Use UDP traffic for player and cap if possible
+            PacketData::Player { .. } | PacketData::Cap { .. } if self.udp_conn.is_client_udp() => {
+                self.udp_conn.write_packet(packet).await
             }
-        } else {
-            // Fall back to TCP traffic
-            self.conn.write_packet(packet).await
+            // Fallback to tcp otherwise
+            _ => self.conn.write_packet(packet).await,
         }
     }
 
