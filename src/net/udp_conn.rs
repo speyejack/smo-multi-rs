@@ -21,6 +21,7 @@ pub struct UdpConnection {
     pub socket: UdpSocket,
     pub buff: BytesMut,
     pub send_addr: UdpSenderStatus,
+    pub has_recv_data: bool,
 }
 
 impl UdpConnection {
@@ -29,6 +30,7 @@ impl UdpConnection {
             socket: stream,
             buff: BytesMut::with_capacity(1024),
             send_addr: UdpSenderStatus::Pending(addr),
+            has_recv_data: false,
         }
     }
 
@@ -37,6 +39,7 @@ impl UdpConnection {
             socket: stream,
             buff: BytesMut::with_capacity(1024),
             send_addr: UdpSenderStatus::Connected(addr),
+            has_recv_data: false,
         }
     }
 
@@ -59,10 +62,7 @@ impl UdpConnection {
     }
 
     pub fn is_client_udp(&self) -> bool {
-        match self.send_addr {
-            UdpSenderStatus::Connected(_) => true,
-            _ => false,
-        }
+        matches!(self.send_addr, UdpSenderStatus::Connected(_) if self.has_recv_data)
     }
 
     pub fn set_client_port(&mut self, port: u16) {
@@ -92,6 +92,7 @@ impl UdpConnection {
             let (read_amount, addr) = self.socket.recv_from(&mut buff).await?;
             if addr == expected_addr {
                 self.buff.put_slice(&buff[..read_amount]);
+                self.has_recv_data = true;
             }
         } else {
             // Never resolve as connection isnt ready
