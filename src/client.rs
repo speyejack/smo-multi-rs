@@ -11,9 +11,13 @@ use crate::settings::SyncSettings;
 use crate::types::ChannelError;
 use crate::types::ClientInitError;
 use crate::types::ErrorSeverity;
+use crate::types::Quaternion;
 use crate::types::Result;
+use crate::types::Vector3;
 use crate::types::{Costume, SMOError};
+use nalgebra::UnitQuaternion;
 use std::collections::HashSet;
+use std::io::Read;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
@@ -60,6 +64,14 @@ pub struct PlayerData {
 enum ClientEvent {
     Incoming(Packet),
     Outgoing(ClientCommand),
+}
+
+pub fn get_mario_size(is_2d: bool) -> f32 {
+    if is_2d {
+        180.0
+    } else {
+        160.0
+    }
 }
 
 #[derive(Debug)]
@@ -124,16 +136,33 @@ impl Client {
     }
 
     /// Handle any incoming packets from the client
-    async fn handle_packet(&mut self, packet: Packet) -> Result<()> {
+    async fn handle_packet(&mut self, mut packet: Packet) -> Result<()> {
         match packet.data {
             PacketData::Player { .. } | PacketData::Cap { .. } => {}
             _ => tracing::trace!("Handling packet: {}", &packet.data.get_type_name()),
         }
 
-        let send_destination = match &packet.data {
+        let send_destination = match &mut packet.data {
+            PacketData::Player {
+                ref mut rot,
+                ref mut pos,
+                ..
+            } => {
+                let settings = self.settings.read().await;
+                if settings.flip.enabled
+                    && settings.flip.pov.is_others_flip()
+                    && settings.flip.players.get(&packet.id).is_none()
+                {
+                    tracing::trace!("Flippng output");
+                    let angle = std::f32::consts::PI;
+                    let rot_quad = *(UnitQuaternion::from_axis_angle(&Vector3::z_axis(), angle));
+                    let data = self.player.read().await;
+                    *pos += get_mario_size(data.is_2d) * Vector3::y();
+                    *rot *= rot_quad;
+                }
+                PacketDestination::Coordinator
+            }
             PacketData::Costume(costume) => {
-                // TODO: Figure out why shine sync code in original
-                // code base for costume packet
                 let mut data = self.player.write().await;
                 data.costume = costume.clone();
                 data.loaded_save = true;
@@ -147,12 +176,12 @@ impl Client {
                 let mut data = self.player.write().await;
                 data.is_2d = *is_2d;
                 data.scenario = *scenario_num;
-                data.last_game_packet = Some(packet.clone());
                 if stage == "CapWorldHomeStage" && *scenario_num == 0 {
                     data.speedrun_start = true;
                     data.shine_sync.clear();
                 }
-
+                let new_packet = packet.clone();
+                data.last_game_packet = Some(new_packet);
                 PacketDestination::Coordinator
             }
             PacketData::Tag {
@@ -202,19 +231,55 @@ impl Client {
     /// Handle any commands sent from internal channels
     async fn handle_command(&mut self, command: ClientCommand) -> Result<()> {
         match command {
-            ClientCommand::Packet(p) => {
+            ClientCommand::Packet(mut p) => {
                 if p.id == self.guid {
-                    if let PacketData::Disconnect = p.data {
-                        // Disconnect packets handled later
-                        self.alive = false;
+                    match &mut p.data {
+                        PacketData::Disconnect => {
+                            // Disconnect packets handled later
+                            self.alive = false;
+                        }
+                        _ => {}
                     }
                 } else {
+                    match &mut p.data {
+                        PacketData::Player {
+                            ref mut pos,
+                            ref mut rot,
+                            ..
+                        } => {
+                            let settings = self.settings.read().await;
+                            if settings.flip.enabled
+                                && settings.flip.pov.is_self_flip()
+                                && settings.flip.players.get(&p.id).is_some()
+                            {
+                                tracing::trace!("Flippng input");
+                                let angle = std::f32::consts::PI;
+                                let rot_quad =
+                                    *(UnitQuaternion::from_axis_angle(&Vector3::z_axis(), angle));
+                                let data = self.player.read().await;
+                                *pos += get_mario_size(data.is_2d) * Vector3::y();
+                                *rot *= rot_quad;
+                            }
+                        }
+                        _ => {}
+                    }
                     self.send_packet(&p).await?;
                 }
             }
             ClientCommand::SelfAddressed(mut p) => {
                 // Update local client data with any outgoing packet data
                 match p.data {
+                    PacketData::UdpInit { ref mut port } => {
+                        let new_port = self
+                            .udp_conn
+                            .socket
+                            .local_addr()
+                            .map(|x| x.port())
+                            .map_err(|e| {
+                                anyhow::anyhow!("Unable to get local udp address: {}", e)
+                            })?;
+                        *port = new_port;
+                    }
                     PacketData::Shine { shine_id, .. } => {
                         let mut data = self.player.write().await;
                         data.shine_sync.insert(shine_id);

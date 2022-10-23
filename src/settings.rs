@@ -55,6 +55,21 @@ pub enum FlipPovSettings {
     Player,
     Others,
 }
+impl FlipPovSettings {
+    pub fn is_self_flip(&self) -> bool {
+        match self {
+            FlipPovSettings::Both | FlipPovSettings::Player => true,
+            FlipPovSettings::Others => false,
+        }
+    }
+
+    pub fn is_others_flip(&self) -> bool {
+        match self {
+            FlipPovSettings::Both | FlipPovSettings::Others => true,
+            FlipPovSettings::Player => false,
+        }
+    }
+}
 
 impl FromStr for FlipPovSettings {
     type Err = SMOError;
