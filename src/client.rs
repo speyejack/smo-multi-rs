@@ -152,7 +152,7 @@ impl Client {
                 let settings = self.settings.read().await;
                 if settings.flip.enabled
                     && settings.flip.pov.is_others_flip()
-                    && settings.flip.players.get(&packet.id).is_none()
+                    && settings.flip.players.get(&packet.id).is_some()
                 {
                     tracing::trace!("Flippng output");
                     let angle = std::f32::consts::PI;
@@ -251,7 +251,7 @@ impl Client {
                             let settings = self.settings.read().await;
                             if settings.flip.enabled
                                 && settings.flip.pov.is_self_flip()
-                                && settings.flip.players.get(&p.id).is_some()
+                                && settings.flip.players.get(&p.id).is_none()
                             {
                                 tracing::trace!("Flippng input");
                                 let angle = std::f32::consts::PI;
