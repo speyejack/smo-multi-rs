@@ -1,7 +1,7 @@
 use crate::{
     client::SyncPlayer,
     cmds::{
-        console::{FlipCommand, ScenarioCommand, ShineCommand, TagCommand},
+        console::{FlipCommand, ScenarioCommand, ShineCommand, TagCommand, UdpCommand},
         ClientCommand, Command, ConsoleCommand, ServerCommand, ServerWideCommand,
     },
     guid::Guid,
@@ -433,6 +433,15 @@ impl Coordinator {
                     self.send_players(&players, &ClientCommand::SelfAddressed(packet))
                         .await?;
                     format!("Send shine num {}", id)
+                }
+            },
+            ConsoleCommand::Udp(udpcmd) => match udpcmd {
+                UdpCommand::Init { player } => {
+                    let players = self.players.get_clients(&[player][..].into()).await?;
+                    let p = Packet::new(Guid::default(), PacketData::UdpInit { port: 0 });
+                    self.send_players(&players, &ClientCommand::SelfAddressed(p))
+                        .await?;
+                    format!("Initiated udp handshakes")
                 }
             },
             ConsoleCommand::LoadSettings => {

@@ -344,6 +344,7 @@ impl Client {
 
         let l_set = settings.read().await;
         let max_players = l_set.server.max_players;
+        let start_udp_handshake = l_set.udp.initiate_handshake;
         drop(l_set);
 
         tracing::debug!("Initializing connection");
@@ -376,6 +377,7 @@ impl Client {
                 };
 
                 if start_udp_handshake {
+                    tracing::debug!("Starting udp handshake");
                     conn.write_packet(&Packet::new(
                         Guid::default(),
                         PacketData::UdpInit {

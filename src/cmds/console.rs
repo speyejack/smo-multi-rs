@@ -36,6 +36,8 @@ pub enum ConsoleCommand {
     Flip(FlipCommand),
     #[clap(subcommand)]
     Shine(ShineCommand),
+    #[clap(subcommand)]
+    Udp(UdpCommand),
     LoadSettings,
     Restart,
 }
@@ -81,6 +83,12 @@ pub enum ShineCommand {
     Clear,
     Sync,
     Send { id: u32, player: SinglePlayerSelect },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+#[clap(rename_all = "lower")]
+pub enum UdpCommand {
+    Init { player: SinglePlayerSelect },
 }
 
 #[derive(Debug, Clone)]
