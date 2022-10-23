@@ -113,4 +113,17 @@ impl PlayerHolder {
         };
         Ok(select)
     }
+
+    pub async fn flatten_players<'a>(
+        &'a self,
+        players: &PlayerSelect<&'a PlayerInfo>,
+    ) -> Vec<&'a PlayerInfo> {
+        match players {
+            PlayerSelect::AllPlayers => self.clients.values().collect(),
+            PlayerSelect::SelectPlayers(v) => v.to_vec(),
+            PlayerSelect::ExcludePlayers(v) => {
+                unimplemented!("Exclude not implemented for player flattening");
+            }
+        }
+    }
 }
