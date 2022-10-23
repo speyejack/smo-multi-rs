@@ -28,6 +28,7 @@ use tokio::net::TcpStream;
 use tokio::net::UdpSocket;
 use tokio::select;
 use tokio::sync::{broadcast, mpsc, RwLock};
+use tracing::Level;
 
 pub type SyncPlayer = Arc<RwLock<PlayerData>>;
 
@@ -300,14 +301,16 @@ impl Client {
     /// Send packet to player using either tcp or udp
     pub async fn send_packet(&mut self, packet: &Packet) -> Result<()> {
         // Packet logging
-        match packet.data {
-            PacketData::Player { .. } | PacketData::Cap { .. } => {}
-            _ => {
-                tracing::trace!(
-                    "Sending packet: {}->{}",
-                    packet.id,
-                    packet.data.get_type_name()
-                );
+        if tracing::enabled!(Level::TRACE) {
+            match packet.data {
+                PacketData::Player { .. } | PacketData::Cap { .. } => {}
+                _ => {
+                    tracing::trace!(
+                        "Sending packet: {}->{}",
+                        packet.id,
+                        packet.data.get_type_name()
+                    );
+                }
             }
         }
 
