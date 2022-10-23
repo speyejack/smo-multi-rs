@@ -17,7 +17,7 @@ path = "src/lib.rs"
 
 [dependencies]
 tokio = {version="*", features=["full"]}
-clap = {version="*", features=["derive"]}
+clap = {version="4.0.18", features=["derive"]}
 serde = {version="*", features=["derive"]}
 anyhow = "*"
 nalgebra = "0.31.0"
