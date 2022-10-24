@@ -37,7 +37,9 @@ async fn test_client_join() {
 async fn test_two_client_handshake() {
     let server = create_server().await;
     let addr = server.get_bind_addr();
+    let perform_udp_handshake = server.settings.read().await.udp.initiate_handshake;
     let _serv_task = tokio::task::spawn(server.spawn_minimal_server());
+
     sleep(Duration::from_secs(1)).await;
 
     let mut mock1 =
@@ -45,13 +47,16 @@ async fn test_two_client_handshake() {
     let mut mock2 =
         MockClient::connect(addr, "1020304050-0000-0000-0000-0000000000", "Mock2").await;
     tracing::info!("Got mocks");
-    // Recv the udp init packets
-    let _udp_init = timeout(Duration::from_millis(100), mock1.get_packet())
-        .await
-        .expect("Udp handshake packet timed out");
-    let _udp_init = timeout(Duration::from_millis(100), mock2.get_packet())
-        .await
-        .expect("Udp handshake packet timed out");
+
+    if perform_udp_handshake {
+        // Recv the udp init packets
+        let _udp_init = timeout(Duration::from_millis(100), mock1.get_packet())
+            .await
+            .expect("Udp handshake packet timed out");
+        let _udp_init = timeout(Duration::from_millis(100), mock2.get_packet())
+            .await
+            .expect("Udp handshake packet timed out");
+    }
 
     // Recv the connect packets
     let join_1 = timeout(Duration::from_millis(100), mock1.get_packet())
@@ -60,7 +65,6 @@ async fn test_two_client_handshake() {
     let join_2 = timeout(Duration::from_millis(100), mock2.get_packet())
         .await
         .expect("Connect handshake packet timed out");
-
     // Verify the connect packets
     match join_1.data {
         PacketData::Connect { client_name, .. } => assert_eq!(client_name, "Mock2"),
@@ -84,21 +88,23 @@ async fn test_two_client_handshake() {
     .expect("Costume handshake packet timed out");
 }
 
-async fn finish_mock_handshake(mock1: &mut MockClient, mock2: &mut MockClient) {
-    // Receive server udp init packets
-    tracing::debug!("Finishing udp handshake");
-    let _udp_init = timeout(
-        Duration::from_millis(DEFAULT_TIMEOUT_MS),
-        mock1.get_packet(),
-    )
-    .await
-    .expect("Udp handshake packet timed out");
-    let _udp_init = timeout(
-        Duration::from_millis(DEFAULT_TIMEOUT_MS),
-        mock2.get_packet(),
-    )
-    .await
-    .expect("Udp handshake packet timed out");
+async fn finish_mock_handshake(mock1: &mut MockClient, mock2: &mut MockClient, perform_udp: bool) {
+    if perform_udp {
+        // Receive server udp init packets
+        tracing::debug!("Finishing udp handshake");
+        let _udp_init = timeout(
+            Duration::from_millis(DEFAULT_TIMEOUT_MS),
+            mock1.get_packet(),
+        )
+        .await
+        .expect("Udp handshake packet timed out");
+        let _udp_init = timeout(
+            Duration::from_millis(DEFAULT_TIMEOUT_MS),
+            mock2.get_packet(),
+        )
+        .await
+        .expect("Udp handshake packet timed out");
+    }
 
     // Receive other players connect packets
     tracing::debug!("Finishing join handshake");
@@ -130,6 +136,7 @@ async fn finish_mock_handshake(mock1: &mut MockClient, mock2: &mut MockClient) {
 async fn test_movement() {
     let server = create_server().await;
     let addr = server.get_bind_addr();
+    let perform_udp_handshake = server.settings.read().await.udp.initiate_handshake;
     let _serv_task = tokio::task::spawn(server.spawn_minimal_server());
     sleep(Duration::from_secs(1)).await;
 
@@ -141,7 +148,12 @@ async fn test_movement() {
     tracing::info!("Got mocks");
 
     tracing::info!("Finishing handshake");
-    finish_mock_handshake(&mut mock_client_1, &mut mock_client_2).await;
+    finish_mock_handshake(
+        &mut mock_client_1,
+        &mut mock_client_2,
+        perform_udp_handshake,
+    )
+    .await;
 
     let packet_data = PacketData::Player {
         pos: Vector3::x(),
@@ -176,6 +188,7 @@ async fn test_movement() {
 async fn test_cap_movement() {
     let server = create_server().await;
     let addr = server.get_bind_addr();
+    let perform_udp_handshake = server.settings.read().await.udp.initiate_handshake;
     let _serv_task = tokio::task::spawn(server.spawn_minimal_server());
     sleep(Duration::from_secs(1)).await;
 
@@ -187,7 +200,12 @@ async fn test_cap_movement() {
     tracing::info!("Got mocks");
 
     tracing::info!("Finishing handshake");
-    finish_mock_handshake(&mut mock_client_1, &mut mock_client_2).await;
+    finish_mock_handshake(
+        &mut mock_client_1,
+        &mut mock_client_2,
+        perform_udp_handshake,
+    )
+    .await;
 
     let cap_data = PacketData::Cap {
         pos: Vector3::x(),
