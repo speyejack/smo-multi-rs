@@ -42,6 +42,7 @@ impl Server {
         } else {
             ShineBag::default()
         };
+        let udp_ports = Some((settings.udp.base_port, settings.udp.port_count));
 
         let settings = Arc::new(RwLock::new(settings));
         let (cli_broadcast, _) = broadcast::channel(100);
@@ -54,7 +55,7 @@ impl Server {
             cli_broadcast: cli_broadcast.clone(),
 
             tcp_bind_addr: local_bind_addr,
-            udp_port_addrs: Some((51888, 32)),
+            udp_port_addrs: udp_ports,
             listener: None,
         };
 

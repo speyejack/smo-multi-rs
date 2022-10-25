@@ -139,8 +139,8 @@ pub struct PersistShine {
 #[serde(rename_all = "PascalCase")]
 pub struct Udp {
     pub initiate_handshake: bool,
-    pub base_port: u32,
-    pub port_count: u32,
+    pub base_port: u16,
+    pub port_count: u16,
 }
 
 impl Default for ServerSettings {
