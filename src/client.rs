@@ -1,31 +1,23 @@
-use crate::cmds::ClientCommand;
-use crate::cmds::Command;
-use crate::cmds::ServerCommand;
-use crate::guid::Guid;
-
-use crate::net::connection::Connection;
-use crate::net::udp_conn::UdpConnection;
-use crate::net::Packet;
-use crate::net::PacketData;
-use crate::settings::SyncSettings;
-use crate::types::ChannelError;
-use crate::types::ClientInitError;
-use crate::types::ErrorSeverity;
-use crate::types::Result;
-use crate::types::Vector3;
-use crate::types::{Costume, SMOError};
+use crate::{
+    cmds::{ClientCommand, Command, ServerCommand},
+    guid::Guid,
+    net::{connection::Connection, udp_conn::UdpConnection, Packet, PacketData},
+    settings::SyncSettings,
+    types::{ChannelError, ClientInitError, Costume, ErrorSeverity, Result, SMOError, Vector3},
+};
 use nalgebra::UnitQuaternion;
-use std::collections::HashSet;
-use std::net::IpAddr;
-use std::net::Ipv4Addr;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
-use tokio::net::UdpSocket;
-use tokio::select;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use std::{
+    collections::HashSet,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
+use tokio::{
+    io::AsyncWriteExt,
+    net::{TcpStream, UdpSocket},
+    select,
+    sync::{broadcast, mpsc, RwLock},
+};
 use tracing::Level;
 
 pub type SyncPlayer = Arc<RwLock<PlayerData>>;
