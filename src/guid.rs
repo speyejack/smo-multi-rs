@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::types::EncodingError;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Eq, Hash, Copy, Default)]
+#[serde(into = "String", try_from = "String")]
 pub struct Guid {
     pub id: [u8; 16],
 }
@@ -42,8 +43,22 @@ impl Display for Guid {
     }
 }
 
+impl From<Guid> for String {
+    fn from(guid: Guid) -> Self {
+        guid.to_string()
+    }
+}
+
 impl From<[u8; 16]> for Guid {
     fn from(id: [u8; 16]) -> Self {
         Guid { id }
+    }
+}
+
+impl TryFrom<String> for Guid {
+    type Error = EncodingError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::from_str(&value)
     }
 }
