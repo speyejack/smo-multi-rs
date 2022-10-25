@@ -18,7 +18,7 @@ use std::{
 };
 use tokio::{
     fs::File,
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     sync::{broadcast, mpsc, RwLock},
     time,
 };
@@ -112,8 +112,9 @@ impl Coordinator {
                             let was_speed_run = data.speedrun_start;
                             data.speedrun_start = false;
                             drop(data);
+                            let should_sync_shines = self.settings.read().await.shines.enabled;
 
-                            if was_speed_run {
+                            if should_sync_shines && was_speed_run {
                                 let client = client.clone();
                                 let channel = self.players.get_channel(&packet.id)?.clone();
                                 let shine_bag = self.shine_bag.clone();
@@ -434,6 +435,17 @@ impl Coordinator {
                         .await?;
                     format!("Send shine num {}", id)
                 }
+                ShineCommand::Set { should_sync } => {
+                    let mut settings = self.settings.write().await;
+                    settings.shines.enabled = should_sync;
+                    save_settings(&settings)?;
+
+                    if should_sync {
+                        "Enabled shine sync".to_string()
+                    } else {
+                        "Disabled shine sync".to_string()
+                    }
+                }
             },
             ConsoleCommand::Udp(udpcmd) => match udpcmd {
                 UdpCommand::Init { player } => {
@@ -673,6 +685,11 @@ impl Coordinator {
     }
 
     async fn sync_all_shines(&mut self) -> Result<()> {
+        let settings = self.settings.read().await;
+        if !settings.shines.enabled {
+            return Ok(());
+        }
+
         for (
             _guid,
             PlayerInfo {

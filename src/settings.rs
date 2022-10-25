@@ -27,6 +27,7 @@ pub struct Settings {
     pub scenario: ScenarioSettings,
     pub ban_list: BanListSettings,
     pub discord: DiscordSettings,
+    pub shines: ShineTable,
     pub persist_shines: PersistShine,
     pub udp: Udp,
 }
@@ -123,6 +124,12 @@ pub struct DiscordSettings {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+pub struct ShineTable {
+    pub enabled: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct PersistShine {
     pub enabled: bool,
     pub filename: String,
@@ -190,6 +197,12 @@ impl Default for PersistShine {
             enabled: false,
             filename: "./moons.json".into(),
         }
+    }
+}
+
+impl Default for ShineTable {
+    fn default() -> Self {
+        Self { enabled: true }
     }
 }
 
