@@ -57,7 +57,7 @@ impl Listener {
             // Fast fail any banned ips before resource allocation
             {
                 let settings = self.settings.read().await;
-                let banned_ips = &settings.ban_list.ips;
+                let banned_ips = &settings.ban_list.ip_addresses;
 
                 if banned_ips.contains(&addr.ip()) {
                     tracing::warn!("Banned ip tried to connect: {}", addr.ip());

@@ -544,7 +544,7 @@ impl Coordinator {
             let settings = self.settings.read().await;
             let max_players: usize = settings.server.max_players.into();
             let banned_players = &settings.ban_list.players;
-            let banned_ips = &settings.ban_list.ips;
+            let banned_ips = &settings.ban_list.ip_addresses;
 
             if max_players <= self.players.clients.len() {
                 tracing::warn!(

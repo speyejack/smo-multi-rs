@@ -111,7 +111,7 @@ pub struct ScenarioSettings {
 pub struct BanListSettings {
     pub enabled: bool,
     pub players: HashSet<Guid>,
-    pub ips: HashSet<IpAddr>,
+    pub ip_addresses: HashSet<IpAddr>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -176,7 +176,7 @@ impl Default for BanListSettings {
         Self {
             enabled: false,
             players: Default::default(),
-            ips: Default::default(),
+            ip_addresses: Default::default(),
         }
     }
 }
