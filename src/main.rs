@@ -16,6 +16,7 @@ use crate::types::Result;
 use server::Server;
 use settings::{load_settings, save_settings};
 use tracing_subscriber::EnvFilter;
+use types::SMOError;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -42,7 +43,19 @@ fn setup_env() {
 }
 
 fn create_server() -> Server {
-    let settings = load_settings().unwrap_or_default();
+    let settings = load_settings();
+    let settings = match settings {
+        Ok(s) => s,
+        Err(e) => match e {
+            SMOError::Io(e) => {
+                tracing::warn!("Error opening config file, using default: {e}");
+                Default::default()
+            }
+            SMOError::JsonError(e) => panic!("{e}"),
+            _ => Default::default(),
+        },
+    };
+
     save_settings(&settings).expect("Failed to save config");
 
     Server::build_server(settings)

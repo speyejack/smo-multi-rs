@@ -27,6 +27,7 @@ pub struct Settings {
     pub scenario: ScenarioSettings,
     pub ban_list: BanListSettings,
     pub discord: DiscordSettings,
+    pub shines: ShineTable,
     pub persist_shines: PersistShine,
     pub udp: Udp,
     pub json_api: JsonApiSettings,
@@ -111,7 +112,7 @@ pub struct ScenarioSettings {
 pub struct BanListSettings {
     pub enabled: bool,
     pub players: HashSet<Guid>,
-    pub ips: HashSet<IpAddr>,
+    pub ip_addresses: HashSet<IpAddr>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -120,6 +121,12 @@ pub struct DiscordSettings {
     pub token: Option<String>,
     pub prefix: String,
     pub log_channel: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ShineTable {
+    pub enabled: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -133,8 +140,8 @@ pub struct PersistShine {
 #[serde(rename_all = "PascalCase")]
 pub struct Udp {
     pub initiate_handshake: bool,
-    pub base_port: u32,
-    pub port_count: u32,
+    pub base_port: u16,
+    pub port_count: u16,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -157,7 +164,7 @@ impl Default for ServerSettings {
 impl Default for FlipSettings {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             players: Default::default(),
             pov: Default::default(),
         }
@@ -177,7 +184,7 @@ impl Default for BanListSettings {
         Self {
             enabled: false,
             players: Default::default(),
-            ips: Default::default(),
+            ip_addresses: Default::default(),
         }
     }
 }
@@ -198,6 +205,12 @@ impl Default for PersistShine {
             enabled: false,
             filename: "./moons.json".into(),
         }
+    }
+}
+
+impl Default for ShineTable {
+    fn default() -> Self {
+        Self { enabled: true }
     }
 }
 

@@ -121,7 +121,7 @@ impl PlayerHolder {
         match players {
             PlayerSelect::AllPlayers => self.clients.values().collect(),
             PlayerSelect::SelectPlayers(v) => v.to_vec(),
-            PlayerSelect::ExcludePlayers(v) => {
+            PlayerSelect::ExcludePlayers(_v) => {
                 unimplemented!("Exclude not implemented for player flattening");
             }
         }

@@ -92,7 +92,14 @@ pub enum ShineCommand {
     List,
     Clear,
     Sync,
-    Send { id: u32, player: SinglePlayerSelect },
+    Send {
+        id: u32,
+        player: SinglePlayerSelect,
+    },
+    Set {
+        #[arg(action = clap::ArgAction::Set)]
+        should_sync: bool,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]

@@ -19,7 +19,7 @@ use std::{
 };
 use tokio::{
     fs::File,
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     sync::{broadcast, mpsc, RwLock},
     time,
 };
@@ -117,8 +117,9 @@ impl Coordinator {
                             let was_speed_run = data.speedrun_start;
                             data.speedrun_start = false;
                             drop(data);
+                            let should_sync_shines = self.settings.read().await.shines.enabled;
 
-                            if was_speed_run {
+                            if should_sync_shines && was_speed_run {
                                 let client = client.clone();
                                 let channel = self.players.get_channel(&packet.id)?.clone();
                                 let shine_bag = self.shine_bag.clone();
@@ -237,6 +238,17 @@ impl Coordinator {
                 let players = players[..].into();
                 self.disconnect_players(&players).await?;
 
+                let player_data = self.players.get_clients(&players).await?;
+                let player_data = self.players.flatten_players(&player_data).await;
+
+                let mut ips = Vec::new();
+                for player in player_data {
+                    let data = player.data.read().await;
+                    if let Some(x) = data.ipv4 {
+                        ips.push(x)
+                    }
+                }
+
                 let players = self.players.players_to_guids(&players).await?;
                 let mut settings = self.settings.write().await;
 
@@ -248,6 +260,14 @@ impl Coordinator {
                     .collect();
 
                 settings.ban_list.players = banned_players;
+
+                let ips = settings
+                    .ban_list
+                    .ip_addresses
+                    .union(&ips.into_iter().collect())
+                    .copied()
+                    .collect();
+                settings.ban_list.ip_addresses = ips;
 
                 "Banned players".to_string()
             }
@@ -439,6 +459,17 @@ impl Coordinator {
                         .await?;
                     format!("Send shine num {}", id)
                 }
+                ShineCommand::Set { should_sync } => {
+                    let mut settings = self.settings.write().await;
+                    settings.shines.enabled = should_sync;
+                    save_settings(&settings)?;
+
+                    if should_sync {
+                        "Enabled shine sync".to_string()
+                    } else {
+                        "Disabled shine sync".to_string()
+                    }
+                }
             },
             ConsoleCommand::Udp(udpcmd) => match udpcmd {
                 UdpCommand::Init { player } => {
@@ -537,7 +568,7 @@ impl Coordinator {
             let settings = self.settings.read().await;
             let max_players: usize = settings.server.max_players.into();
             let banned_players = &settings.ban_list.players;
-            let banned_ips = &settings.ban_list.ips;
+            let banned_ips = &settings.ban_list.ip_addresses;
 
             if max_players <= self.players.clients.len() {
                 tracing::warn!(
@@ -635,7 +666,7 @@ impl Coordinator {
 
             let costume_packet = match &other_cli.costume {
                 Some(costume) => Some(Packet::new(*other_id, PacketData::Costume(costume.clone()))),
-                _ => None
+                _ => None,
             };
 
             let last_game_packet = other_cli.last_game_packet.clone();
@@ -683,6 +714,11 @@ impl Coordinator {
     }
 
     async fn sync_all_shines(&mut self) -> Result<()> {
+        let settings = self.settings.read().await;
+        if !settings.shines.enabled {
+            return Ok(());
+        }
+
         for (
             _guid,
             PlayerInfo {
