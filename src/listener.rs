@@ -72,7 +72,7 @@ impl Listener {
             udp_offset += 1;
             udp_offset %= udp_port_data.1;
 
-            tracing::info!("New client attempting to connect");
+            tracing::debug!("New client attempting to connect");
 
             tokio::spawn(async move {
                 let cli_result =
