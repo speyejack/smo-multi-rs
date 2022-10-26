@@ -156,7 +156,7 @@ impl Default for ServerSettings {
 impl Default for FlipSettings {
     fn default() -> Self {
         Self {
-            enabled: true,
+            enabled: false,
             players: Default::default(),
             pov: Default::default(),
         }
