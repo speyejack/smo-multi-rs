@@ -239,7 +239,9 @@ impl Coordinator {
                 let mut ips = Vec::new();
                 for player in player_data {
                     let data = player.data.read().await;
-                    data.ipv4.map(|x| ips.push(x));
+                    if let Some(x) = data.ipv4 {
+                        ips.push(x)
+                    }
                 }
 
                 let players = self.players.players_to_guids(&players).await?;
