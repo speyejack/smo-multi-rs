@@ -233,6 +233,15 @@ impl Coordinator {
                 let players = players[..].into();
                 self.disconnect_players(&players).await?;
 
+                let player_data = self.players.get_clients(&players).await?;
+                let player_data = self.players.flatten_players(&player_data).await;
+
+                let mut ips = Vec::new();
+                for player in player_data {
+                    let data = player.data.read().await;
+                    data.ipv4.map(|x| ips.push(x));
+                }
+
                 let players = self.players.players_to_guids(&players).await?;
                 let mut settings = self.settings.write().await;
 
@@ -244,6 +253,14 @@ impl Coordinator {
                     .collect();
 
                 settings.ban_list.players = banned_players;
+
+                let ips = settings
+                    .ban_list
+                    .ip_addresses
+                    .union(&ips.into_iter().collect())
+                    .copied()
+                    .collect();
+                settings.ban_list.ip_addresses = ips;
 
                 "Banned players".to_string()
             }
@@ -642,7 +659,7 @@ impl Coordinator {
 
             let costume_packet = match &other_cli.costume {
                 Some(costume) => Some(Packet::new(*other_id, PacketData::Costume(costume.clone()))),
-                _ => None
+                _ => None,
             };
 
             let last_game_packet = other_cli.last_game_packet.clone();
