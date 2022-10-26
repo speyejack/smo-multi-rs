@@ -248,6 +248,7 @@ impl Client {
                         let settings = self.settings.read().await;
                         if settings.flip.enabled
                             && settings.flip.pov.is_self_flip()
+                            && settings.flip.players.get(&self.guid).is_some()
                             && settings.flip.players.get(&p.id).is_none()
                         {
                             let angle = std::f32::consts::PI;
