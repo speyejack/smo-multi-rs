@@ -53,6 +53,7 @@ impl Listener {
 
                 }
             };
+            socket.set_nodelay(true)?;
 
             // Fast fail any banned ips before resource allocation
             {
