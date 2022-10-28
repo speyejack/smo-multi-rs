@@ -9,7 +9,7 @@ use bytes::{Buf, BufMut};
 
 type Result<T> = std::result::Result<T, EncodingError>;
 
-pub const MAX_PACKET_SIZE: usize = 300;
+pub const MAX_PACKET_SIZE: usize = 0x100;
 
 const COSTUME_NAME_SIZE: usize = 0x20;
 const CAP_ANIM_SIZE: usize = 0x30;

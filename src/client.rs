@@ -233,7 +233,7 @@ impl Client {
             ClientCommand::Packet(mut p) => {
                 match &mut p.data {
                     // Same pid handling
-                    PacketData::Disconnect => {
+                    PacketData::Disconnect if p.id == self.guid => {
                         self.alive = false;
                         // Disconnect packets handled later
                         return Ok(());
