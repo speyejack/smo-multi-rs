@@ -9,6 +9,7 @@ mod net;
 mod player_holder;
 mod server;
 mod settings;
+mod stages;
 mod types;
 
 use crate::types::Result;

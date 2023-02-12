@@ -9,5 +9,6 @@ pub mod net;
 pub mod player_holder;
 pub mod server;
 pub mod settings;
+pub mod stages;
 pub mod test;
 pub mod types;
