@@ -25,6 +25,28 @@ lazy_static! {
     ]);
 
 
+    static ref ALIAS2KINGDOM : HashMap<&'static str, &'static str> = HashMap::from([
+        ( "cap"     , "Cap Kingdom"      ),
+        ( "cascade" , "Cascade Kingdom"  ),
+        ( "sand"    , "Sand Kingdom"     ),
+        ( "lake"    , "Lake Kingdom"     ),
+        ( "wooded"  , "Wooded Kingdom"   ),
+        ( "cloud"   , "Cloud Kingdom"    ),
+        ( "lost"    , "Lost Kingdom"     ),
+        ( "metro"   , "Metro Kingdom"    ),
+        ( "sea"     , "Snow Kingdom"     ),
+        ( "snow"    , "Seaside Kingdom"  ),
+        ( "lunch"   , "Luncheon Kingdom" ),
+        ( "ruined"  , "Ruined Kingdom"   ),
+        ( "bowser"  , "Bowser's Kingdom" ),
+        ( "moon"    , "Moon Kingdom"     ),
+        ( "mush"    , "Mushroom Kingdom" ),
+        ( "dark"    , "Dark Side"        ),
+        ( "darker"  , "Darker Side"      ),
+        ( "odyssey" , "Odyssey"          ),
+    ]);
+
+
     static ref STAGE2ALIAS : HashMap<&'static str, &'static str> = HashMap::from([
         ( "CapWorldHomeStage"                     , "cap"     ),
         ( "CapWorldTowerStage"                    , "cap"     ),
@@ -227,5 +249,15 @@ impl Stages {
             return Some(input[0..(input.len() - 1)].to_string())
         }
         return None
+    }
+
+    pub fn stage2kingdom(stage: &str) -> Option<String> {
+        match STAGE2ALIAS.get(&stage) {
+            Some(alias) => match ALIAS2KINGDOM.get(alias) {
+                Some(kingdom) => Some(kingdom.to_string()),
+                None => None,
+            },
+            None => None,
+        }
     }
 }

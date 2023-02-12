@@ -7,6 +7,7 @@ use crate::guid::Guid;
 use crate::net::{ Packet, PacketData };
 use crate::player_holder::PlayerInfo;
 use crate::settings::SyncSettings;
+use crate::stages::Stages;
 
 
 #[derive(Serialize)]
@@ -17,6 +18,9 @@ pub(in crate::json_api) struct JsonApiStatusPlayer {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     name : Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kingdom : Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     stage : Option<String>,
@@ -55,6 +59,12 @@ impl JsonApiStatusPlayer {
             let name = if !permissions.contains("Status/Players/Name") { None } else {
                 Some(client.name.to_string())
             };
+            let kingdom = if !permissions.contains("Status/Players/Kingdom") { None } else {
+                match &client.last_game_packet {
+                    Some(Packet { data: PacketData::Game { stage, .. }, .. }) => Stages::stage2kingdom(&stage),
+                    _ => None,
+                }
+            };
             let stage = if !permissions.contains("Status/Players/Stage") { None } else {
                 match &client.last_game_packet {
                     Some(Packet { data: PacketData::Game { stage, .. }, .. }) => {
@@ -88,6 +98,7 @@ impl JsonApiStatusPlayer {
             let player = JsonApiStatusPlayer {
                 id       : id,
                 name     : name,
+                kingdom  : kingdom,
                 stage    : stage,
                 scenario : scenario,
                 costume  : costume,
