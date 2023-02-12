@@ -5,9 +5,11 @@ use crate::{
         ClientCommand, Command, ConsoleCommand, ServerCommand, ServerWideCommand,
     },
     guid::Guid,
+    json_api::JsonApi,
     net::{ConnectionType, Packet, PacketData, TagUpdate},
     player_holder::{ClientChannel, PlayerHolder, PlayerInfo, PlayerSelect},
     settings::{load_settings, save_settings, SyncSettings},
+    stages::Stages,
     types::{ClientInitError, Result, SMOError},
 };
 
@@ -34,7 +36,7 @@ pub struct Coordinator {
     pub from_clients: mpsc::Receiver<Command>,
     pub cli_broadcast: broadcast::Sender<ClientCommand>,
     pub server_broadcast: broadcast::Sender<ServerWideCommand>,
-    players: PlayerHolder,
+    pub(crate) players: PlayerHolder,
 }
 
 impl Coordinator {
@@ -78,6 +80,10 @@ impl Coordinator {
             Command::Server(sc) => match sc {
                 ServerCommand::NewPlayer { .. } => self.add_client(sc).await?,
                 ServerCommand::DisconnectPlayer { guid } => self.disconnect_player(guid).await?,
+                ServerCommand::JsonApi { conn, json } => {
+                    JsonApi::handle(self, conn, json).await?;
+                    return Ok(true);
+                },
             },
             Command::Packet(packet) => {
                 match &packet.data {
@@ -155,20 +161,26 @@ impl Coordinator {
         Ok(true)
     }
 
-    async fn handle_console_cmd(&mut self, cmd: ConsoleCommand) -> Result<String> {
+    pub(crate) async fn handle_console_cmd(&mut self, cmd: ConsoleCommand) -> Result<String> {
         let string: String = match cmd {
             ConsoleCommand::Restart => return Err(SMOError::ServerShutdown),
             ConsoleCommand::SendAll { stage } => {
-                let stage = unalias_map(&stage);
-                let data = PacketData::ChangeStage {
-                    stage: stage.clone(),
-                    id: "".to_string(),
-                    scenario: -1,
-                    sub_scenario: 0,
-                };
-                let p = Packet::new(Guid::default(), data);
-                self.cli_broadcast.send(ClientCommand::SelfAddressed(p))?;
-                format!("Sent players to {}:-1", stage)
+                match Stages::input2stage(&stage) {
+                    Some(stage) => {
+                        let data = PacketData::ChangeStage {
+                            stage: stage.clone(),
+                            id: "".to_string(),
+                            scenario: -1,
+                            sub_scenario: 0,
+                        };
+                        let p = Packet::new(Guid::default(), data);
+                        self.cli_broadcast.send(ClientCommand::SelfAddressed(p))?;
+                        format!("Sent players to {}:-1", stage)
+                    },
+                    None => {
+                        return Err(SMOError::InvalidConsoleArg(format!("Stage '{}' unknown (force it with '{}!')", stage, stage)))
+                    }
+                }
             }
             ConsoleCommand::Send {
                 stage,
@@ -180,19 +192,25 @@ impl Coordinator {
                     return Err(SMOError::InvalidConsoleArg("Players empty".to_string()));
                 }
 
-                let stage = unalias_map(&stage);
-                let data = PacketData::ChangeStage {
-                    stage: stage.clone(),
-                    id,
-                    scenario,
-                    sub_scenario: 0,
-                };
-                let packet = Packet::new(Guid::default(), data);
+                match Stages::input2stage(&stage) {
+                    Some(stage) => {
+                        let data = PacketData::ChangeStage {
+                            stage: stage.clone(),
+                            id,
+                            scenario,
+                            sub_scenario: 0,
+                        };
+                        let packet = Packet::new(Guid::default(), data);
 
-                let cmd = ClientCommand::SelfAddressed(packet);
-                let players = self.players.get_clients(&players[..].into()).await?;
-                self.send_players(&players, &cmd).await?;
-                format!("Sent players to {}:{}", stage, scenario)
+                        let cmd = ClientCommand::SelfAddressed(packet);
+                        let players = self.players.get_clients(&players[..].into()).await?;
+                        self.send_players(&players, &cmd).await?;
+                        format!("Sent players to {}:{}", stage, scenario)
+                    },
+                    None => {
+                        return Err(SMOError::InvalidConsoleArg(format!("Stage '{}' unknown (force it with '{}!')", stage, stage)))
+                    }
+                }
             }
             ConsoleCommand::List => {
                 let mut player_data = Vec::default();
@@ -774,31 +792,6 @@ async fn client_sync_shines(
             .await?;
     }
     Ok(())
-}
-
-fn unalias_map(alias: &str) -> String {
-    let unalias = match alias {
-        "cap" => "CapWorldHomeStage",
-        "cascade" => "WaterfallWorldHomeStage",
-        "sand" => "SandWorldHomeStage",
-        "lake" => "LakeWorldHomeStage",
-        "wooded" => "ForestWorldHomeStage",
-        "cloud" => "CloudWorldHomeStage",
-        "lost" => "ClashWorldHomeStage",
-        "metro" => "CityWorldHomeStage",
-        "sea" => "SeaWorldHomeStage",
-        "snow" => "SnowWorldHomeStage",
-        "lunch" => "LavaWorldHomeStage",
-        "ruined" => "BossRaidWorldHomeStage",
-        "bowser" => "SkyWorldHomeStage",
-        "moon" => "MoonWorldHomeStage",
-        "mush" => "PeachWorldHomeStage",
-        "dark" => "Special1WorldHomeStage",
-        "darker" => "Special2WorldHomeStage",
-        s => s,
-    };
-
-    unalias.to_string()
 }
 
 async fn save_shines(filename: String, shines: SyncShineBag) -> Result<()> {

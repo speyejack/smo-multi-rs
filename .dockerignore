@@ -1,9 +1,13 @@
 /.git/
 /.dockerignore
-/.gitignore
 /docker-compose.yml
 /Dockerfile
 /examples/*/target
 /proxy.Dockerfile
 /settings.json
 /target/
+
+/**/.gitignore
+/**/*.env
+/**/*.md
+/**/*.sh

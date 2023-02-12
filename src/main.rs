@@ -3,11 +3,13 @@ mod cmds;
 mod console;
 mod coordinator;
 mod guid;
+mod json_api;
 mod listener;
 mod net;
 mod player_holder;
 mod server;
 mod settings;
+mod stages;
 mod types;
 
 use crate::types::Result;

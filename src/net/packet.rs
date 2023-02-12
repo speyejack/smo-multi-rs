@@ -52,7 +52,14 @@ impl Packet {
             return Err(EncodingError::NotEnoughData);
         }
 
-        buf.advance(id_size + type_size);
+        buf.advance(id_size);
+        let ptype: u16 = buf.get_u16_le().into();
+
+        // JsonApi
+        if ptype == 0x5453 {
+            return Ok(0);
+        }
+
         let size = buf.get_u16_le().into();
         if buf.remaining() < size {
             return Err(EncodingError::NotEnoughData);
@@ -120,6 +127,9 @@ pub enum PacketData {
         port: u16,
     },
     HolePunch,
+    JsonApi {
+        json: String
+    },
 }
 
 impl PacketData {
@@ -140,6 +150,7 @@ impl PacketData {
             Self::Command { .. } => 0,
             Self::UdpInit { .. } => 2,
             Self::HolePunch { .. } => 0,
+            Self::JsonApi { json } => json.len(),
         }
     }
 
@@ -160,6 +171,7 @@ impl PacketData {
             Self::Command { .. } => 12,
             Self::UdpInit { .. } => 13,
             Self::HolePunch { .. } => 14,
+            Self::JsonApi { .. } => 0x5453,
         }
     }
 
@@ -180,6 +192,7 @@ impl PacketData {
             Self::Command { .. } => "command",
             Self::UdpInit { .. } => "udpInit",
             Self::HolePunch { .. } => "holePunch",
+            Self::JsonApi { .. } => "jsonApi",
         }
         .to_string()
     }
@@ -206,16 +219,17 @@ where
     R: Buf,
 {
     fn decode(buf: &mut R) -> std::result::Result<Self, EncodingError> {
-        if buf.remaining() < (16 + 2 + 2) {
+        let total_size = buf.remaining();
+        if total_size < (16 + 2 + 2) {
             return Err(EncodingError::NotEnoughData);
         }
 
         let mut id = [0; 16];
         buf.copy_to_slice(&mut id);
         let p_type = buf.get_u16_le();
-        let p_size = buf.get_u16_le();
+        let mut p_size = buf.get_u16_le();
 
-        if buf.remaining() < p_size.into() {
+        if p_type != 0x5453 && buf.remaining() < p_size.into() {
             return Err(EncodingError::NotEnoughData);
         }
 
@@ -296,6 +310,18 @@ where
                 port: buf.get_u16_le(),
             },
             14 => PacketData::HolePunch {},
+            0x5453 => {
+                let t_size = p_size;
+                p_size = total_size as u16;
+                PacketData::JsonApi {
+                    json: [
+                        std::str::from_utf8(&id)?.to_string(),
+                        std::str::from_utf8(&[ (p_type & 0xff) as u8, ((p_type >> 8) & 0xff) as u8 ])?.to_string(),
+                        std::str::from_utf8(&[ (t_size & 0xff) as u8, ((t_size >> 8) & 0xff) as u8 ])?.to_string(),
+                        std::str::from_utf8(&buf.copy_to_bytes(buf.remaining().into()))?.to_string(),
+                    ].join(""),
+                }
+            },
             _ => PacketData::Unhandled {
                 tag: p_type,
                 data: buf.copy_to_bytes(p_size.into())[..].to_vec(),
@@ -422,6 +448,7 @@ where
                 buf.put_u16_le(*port);
             }
             PacketData::HolePunch => {}
+            PacketData::JsonApi { json: _ } => {}
         }
 
         Ok(())
@@ -470,6 +497,7 @@ mod test {
                 12 => 0,
                 13 => 2,
                 14 => 0,
+                0x5453 => 0,
                 _ => 0,
             };
 

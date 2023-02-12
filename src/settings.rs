@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fmt::Display,
     fs::File,
     io::{BufReader, BufWriter},
@@ -30,6 +30,7 @@ pub struct Settings {
     pub shines: ShineTable,
     pub persist_shines: PersistShine,
     pub udp: Udp,
+    pub json_api: JsonApiSettings,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -143,6 +144,13 @@ pub struct Udp {
     pub port_count: u16,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct JsonApiSettings {
+    pub enabled: bool,
+    pub tokens: HashMap<String, HashSet<String>>,
+}
+
 impl Default for ServerSettings {
     fn default() -> Self {
         Self {
@@ -237,4 +245,13 @@ pub fn save_settings(settings: &Settings) -> Result<()> {
     let writer = BufWriter::new(file);
     serde_json::to_writer_pretty(writer, settings)?;
     Ok(())
+}
+
+impl Default for JsonApiSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            tokens: Default::default(),
+        }
+    }
 }

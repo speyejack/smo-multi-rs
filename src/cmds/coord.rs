@@ -1,4 +1,5 @@
 use crate::{client::Client, guid::Guid, net::Packet};
+use crate::net::connection::Connection;
 
 use tokio::sync::mpsc;
 
@@ -13,5 +14,9 @@ pub enum ServerCommand {
     },
     DisconnectPlayer {
         guid: Guid,
+    },
+    JsonApi {
+        conn: Connection,
+        json: String,
     },
 }
