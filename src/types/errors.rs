@@ -114,7 +114,6 @@ impl SMOError {
 }
 
 pub enum ErrorSeverity {
-    ServerFatal,
     ClientFatal,
     NonCritical,
 }
