@@ -1,12 +1,9 @@
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::HashMap;
 
 
-use crate::guid::Guid;
+use crate::coordinator::Coordinator;
 use crate::json_api::{ JsonApiStatusPlayer, JsonApiStatusSettings };
-use crate::player_holder::PlayerInfo;
-use crate::settings::SyncSettings;
 
 
 #[derive(Serialize)]
@@ -22,13 +19,12 @@ pub(in crate::json_api) struct JsonApiStatus {
 
 impl JsonApiStatus {
     pub async fn create(
-        sync_settings : &SyncSettings,
-        token         : &String,
-        clients       : &HashMap<Guid, PlayerInfo>
+        coord : &Coordinator,
+        token : &String,
     ) -> JsonApiStatus {
         JsonApiStatus {
-            players  : JsonApiStatusPlayer::create(sync_settings, &token, clients).await,
-            settings : JsonApiStatusSettings::create(sync_settings, &token).await,
+            players  : JsonApiStatusPlayer::create(coord, &token).await,
+            settings : JsonApiStatusSettings::create(coord, &token).await,
         }
     }
 }

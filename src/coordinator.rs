@@ -36,7 +36,7 @@ pub struct Coordinator {
     pub from_clients: mpsc::Receiver<Command>,
     pub cli_broadcast: broadcast::Sender<ClientCommand>,
     pub server_broadcast: broadcast::Sender<ServerWideCommand>,
-    players: PlayerHolder,
+    pub(crate) players: PlayerHolder,
 }
 
 impl Coordinator {
@@ -81,7 +81,7 @@ impl Coordinator {
                 ServerCommand::NewPlayer { .. } => self.add_client(sc).await?,
                 ServerCommand::DisconnectPlayer { guid } => self.disconnect_player(guid).await?,
                 ServerCommand::JsonApi { conn, json } => {
-                    JsonApi::handle(&self.settings, &self.players.clients, conn, json).await?;
+                    JsonApi::handle(self, conn, json).await?;
                     return Ok(true);
                 },
             },
@@ -161,7 +161,7 @@ impl Coordinator {
         Ok(true)
     }
 
-    async fn handle_console_cmd(&mut self, cmd: ConsoleCommand) -> Result<String> {
+    pub(crate) async fn handle_console_cmd(&mut self, cmd: ConsoleCommand) -> Result<String> {
         let string: String = match cmd {
             ConsoleCommand::Restart => return Err(SMOError::ServerShutdown),
             ConsoleCommand::SendAll { stage } => {

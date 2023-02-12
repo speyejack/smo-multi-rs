@@ -1,7 +1,7 @@
 use serde_json::{ json, Map, Value };
 
 
-use crate::settings::SyncSettings;
+use crate::coordinator::Coordinator;
 
 
 pub(in crate::json_api) struct JsonApiStatusSettings {
@@ -10,10 +10,10 @@ pub(in crate::json_api) struct JsonApiStatusSettings {
 
 impl JsonApiStatusSettings {
     pub async fn create(
-        sync_settings : &SyncSettings,
-        token         : &String
+        coord : &Coordinator,
+        token : &String
     ) -> Option<Value> {
-        let settings = sync_settings.read().await;
+        let settings = coord.settings.read().await;
 
         let permissions: Vec<String> = settings
             .json_api

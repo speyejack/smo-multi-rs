@@ -1,14 +1,11 @@
 use serde::Deserialize;
 use serde_json::{ from_str, json, Value };
-use std::collections::HashMap;
 use tokio::io::AsyncWriteExt;
 
 
-use crate::guid::Guid;
-use crate::json_api::{ JsonApiStatus, BlockClients };
+use crate::coordinator::Coordinator;
+use crate::json_api::{ JsonApiCommands, JsonApiStatus, BlockClients };
 use crate::net::connection::Connection;
-use crate::player_holder::PlayerInfo;
-use crate::settings::SyncSettings;
 use crate::types::Result;
 
 
@@ -17,12 +14,11 @@ pub(crate) struct JsonApi {}
 
 impl JsonApi {
     pub async fn handle(
-        sync_settings: &SyncSettings,
-        clients: &HashMap<Guid, PlayerInfo>,
-        conn: Connection,
-        json_str: String
+        coord    : &mut Coordinator,
+        conn     : Connection,
+        json_str : String,
     ) -> Result<()> {
-        let settings = sync_settings.read().await;
+        let settings = coord.settings.read().await;
 
         if !settings.json_api.enabled { return Ok(()); }
 
@@ -56,10 +52,14 @@ impl JsonApi {
         }
 
         let response: Value = match req.kind.as_str() {
-            "Status" => json!(JsonApiStatus::create(sync_settings, &req.token, clients).await),
+            "Status" => json!(JsonApiStatus::create(coord, &req.token).await),
             "Permissions" => json!({
                 "Permissions": settings.json_api.tokens[&req.token],
             }),
+            "Command" => {
+                drop(settings);
+                json!(JsonApiCommands::process(coord, &req.token, &req.data).await)
+            },
             _ => json!({
                 "Error": ([req.kind, " is not implemented yet".to_string()].join("")),
             }),
@@ -87,9 +87,8 @@ struct JsonApiRequest {
     #[serde(rename = "Token")]
     token : String,
 
-    // @todo: implement when CLI commands get implemented
-    //#[serde(rename = "Data")]
-    //data : Option<String>,
+    #[serde(rename = "Data")]
+    data : Option<String>,
 }
 
 

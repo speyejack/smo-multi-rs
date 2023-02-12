@@ -1,12 +1,9 @@
 use serde::Serialize;
-use std::collections::HashMap;
 use std::net::IpAddr;
 
 
-use crate::guid::Guid;
+use crate::coordinator::Coordinator;
 use crate::net::{ Packet, PacketData };
-use crate::player_holder::PlayerInfo;
-use crate::settings::SyncSettings;
 use crate::stages::Stages;
 
 
@@ -38,19 +35,17 @@ pub(in crate::json_api) struct JsonApiStatusPlayer {
 
 impl JsonApiStatusPlayer {
     pub async fn create(
-        sync_settings : &SyncSettings,
-        token         : &String,
-        clients       : &HashMap<Guid, PlayerInfo>
+        coord : &Coordinator,
+        token : &String,
     ) -> Option<Vec<JsonApiStatusPlayer>> {
-        let settings = sync_settings.read().await;
-        let permissions = &settings.json_api.tokens[token];
+        let permissions = &coord.settings.read().await.json_api.tokens[token];
 
         if !permissions.contains("Status/Players") {
             return None
         }
 
         let mut players: Vec<JsonApiStatusPlayer> = Vec::new();
-        for (profile_id, cs) in clients {
+        for (profile_id, cs) in &coord.players.clients {
             let id = if !permissions.contains("Status/Players/ID") { None } else {
                 Some(profile_id.to_string())
             };
