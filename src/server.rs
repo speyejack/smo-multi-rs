@@ -7,8 +7,12 @@ use crate::{
     types::Result,
 };
 
+use enet::host::{config::HostConfig, Host};
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::{
+    net::UdpSocket,
+    sync::{broadcast, mpsc, RwLock},
+};
 
 use crate::cmds::Command;
 
@@ -21,7 +25,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn build_server(settings: Settings) -> Server {
+    pub fn build_server(settings: Settings, socket: UdpSocket) -> Server {
         let (to_coord, from_clients) = mpsc::channel(100);
 
         let local_bind_addr = SocketAddr::new(settings.server.address, settings.server.port);
@@ -42,21 +46,18 @@ impl Server {
         } else {
             ShineBag::default()
         };
-        let udp_ports = Some((settings.udp.base_port, settings.udp.port_count));
-
+        let max_players = settings.server.max_players;
         let settings = Arc::new(RwLock::new(settings));
         let (cli_broadcast, _) = broadcast::channel(100);
 
         let (serv_send, serv_recv) = broadcast::channel(1);
+        let host = Host::create(HostConfig::new(max_players.into()).unwrap(), socket).unwrap();
         let listener = Listener {
             server_broadcast: serv_recv,
             settings: settings.clone(),
             to_coord: to_coord.clone(),
             cli_broadcast: cli_broadcast.clone(),
-
-            tcp_bind_addr: local_bind_addr,
-            udp_port_addrs: udp_ports,
-            listener: None,
+            host,
         };
 
         let coord = Coordinator::new(
@@ -76,9 +77,9 @@ impl Server {
         }
     }
 
-    pub async fn bind_addresses(&mut self) -> Result<()> {
-        self.listener.bind_address().await
-    }
+    // pub async fn bind_addresses(&mut self) -> Result<()> {
+    //     self.listener.bind_address().await
+    // }
 
     pub async fn spawn_minimal_server(self) -> Result<()> {
         let serv_task = tokio::task::spawn(self.listener.listen_for_clients());
@@ -99,6 +100,6 @@ impl Server {
     }
 
     pub fn get_bind_addr(&self) -> SocketAddr {
-        self.listener.tcp_bind_addr
+        self.listener.host.get_bind_address()
     }
 }

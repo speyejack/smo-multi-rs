@@ -10,10 +10,13 @@ mod server;
 mod settings;
 mod types;
 
+use std::net::SocketAddr;
+
 use crate::types::Result;
 
 use server::Server;
 use settings::{load_settings, save_settings};
+use tokio::net::UdpSocket;
 use tracing_subscriber::EnvFilter;
 use types::SMOError;
 
@@ -22,7 +25,7 @@ async fn main() -> Result<()> {
     setup_env();
     loop {
         tracing::info!("Creating server");
-        let server = create_server();
+        let server = create_server().await;
         tracing::info!("Starting server");
         server.spawn_full_server().await?
     }
@@ -41,7 +44,7 @@ fn setup_env() {
         .init();
 }
 
-fn create_server() -> Server {
+async fn create_server() -> Server {
     let settings = load_settings();
     let settings = match settings {
         Ok(s) => s,
@@ -56,8 +59,13 @@ fn create_server() -> Server {
     };
 
     save_settings(&settings).expect("Failed to save config");
+    let addr = settings.server.address;
+    let port = settings.server.port;
+    let addr = SocketAddr::new(addr, port);
 
-    Server::build_server(settings)
+    let udp = UdpSocket::bind(addr).await.unwrap();
+
+    Server::build_server(settings, udp)
 }
 
 #[cfg(test)]

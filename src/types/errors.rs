@@ -4,6 +4,7 @@ use crate::{
     cmds::{ClientCommand, Command, ServerWideCommand},
     guid::Guid,
 };
+use enet::error::ENetError;
 use hex::FromHexError;
 use serde::{de::Error as DeError, ser::Error as SerError};
 use thiserror::*;
@@ -39,6 +40,8 @@ pub enum SMOError {
     UdpNotInit,
     #[error("Server being shutdown")]
     ServerShutdown,
+    #[error("ENet error: {0}")]
+    ENet(#[from] ENetError),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }

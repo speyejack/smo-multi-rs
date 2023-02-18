@@ -5,6 +5,7 @@ use crate::{
     settings::SyncSettings,
     types::{ChannelError, ClientInitError, Costume, ErrorSeverity, Result, SMOError, Vector3},
 };
+use enet::peer::Peer;
 use nalgebra::UnitQuaternion;
 use std::{
     collections::HashSet,
@@ -29,7 +30,6 @@ pub struct Client {
     pub guid: Guid,
     pub alive: bool,
     pub conn: Connection,
-    pub udp_conn: UdpConnection,
     pub to_coord: mpsc::Sender<Command>,
     pub from_server: mpsc::Receiver<ClientCommand>,
     pub send_broadcast: broadcast::Sender<ClientCommand>,
@@ -106,9 +106,6 @@ impl Client {
             packet = self.conn.read_packet() => {
                 ClientEvent::Incoming(packet?)
             },
-            udp_packet = self.udp_conn.read_packet() => {
-                ClientEvent::Incoming(udp_packet?)
-            },
             command = self.from_server.recv() => ClientEvent::Outgoing(command.ok_or(ChannelError::RecvChannel)?),
             command = self.recv_broadcast.recv() => ClientEvent::Outgoing(command?),
         };
@@ -123,7 +120,7 @@ impl Client {
                 guid: self.guid,
             }))
             .await?;
-        self.conn.socket.shutdown().await?;
+        self.conn.peer.disconnect().await;
         Ok(())
     }
 
@@ -199,17 +196,6 @@ impl Client {
                 }
                 PacketDestination::Coordinator
             }
-            PacketData::UdpInit { port } => {
-                tracing::debug!(
-                    "{} completed udp handshake, attempting hybrid connection",
-                    self.display_name
-                );
-                self.udp_conn.set_client_port(*port);
-                // Attempt to send some udp data to client
-                let holepunch = Packet::new(self.guid, PacketData::HolePunch);
-                self.udp_conn.write_packet(&holepunch).await?;
-                PacketDestination::NoSend
-            }
             PacketData::HolePunch => PacketDestination::NoSend,
             _ => PacketDestination::Broadcast,
         };
@@ -266,17 +252,6 @@ impl Client {
             ClientCommand::SelfAddressed(mut p) => {
                 // Update local client data with any outgoing packet data
                 match p.data {
-                    PacketData::UdpInit { ref mut port } => {
-                        let new_port = self
-                            .udp_conn
-                            .socket
-                            .local_addr()
-                            .map(|x| x.port())
-                            .map_err(|e| {
-                                anyhow::anyhow!("Unable to get local udp address: {}", e)
-                            })?;
-                        *port = new_port;
-                    }
                     PacketData::Shine { shine_id, .. } => {
                         let mut data = self.player.write().await;
                         data.shine_sync.insert(shine_id);
@@ -310,14 +285,7 @@ impl Client {
             }
         }
 
-        match packet.data {
-            // Use UDP traffic for player and cap if possible
-            PacketData::Player { .. } | PacketData::Cap { .. } if self.udp_conn.is_client_udp() => {
-                self.udp_conn.write_packet(packet).await
-            }
-            // Fallback to tcp otherwise
-            _ => self.conn.write_packet(packet).await,
-        }
+        self.conn.write_packet(packet).await
     }
 
     /// Readdress packet to come from the same guid as client then send
@@ -328,14 +296,12 @@ impl Client {
 
     /// Perform the initialization and handshake with client then hand off to coordinator
     pub async fn initialize_client(
-        socket: TcpStream,
+        peer: Peer,
         to_coord: mpsc::Sender<Command>,
         broadcast: broadcast::Sender<ClientCommand>,
-        udp_port: u16,
         settings: SyncSettings,
     ) -> Result<()> {
         let (to_cli, from_server) = mpsc::channel(10);
-        let tcp_sock_addr = socket.peer_addr().expect("Couldn't get tcp peer address");
 
         let l_set = settings.read().await;
         let max_players = l_set.server.max_players;
@@ -343,7 +309,7 @@ impl Client {
         drop(l_set);
 
         tracing::debug!("Initializing connection");
-        let mut conn = Connection::new(socket);
+        let mut conn = Connection::new(peer);
         conn.write_packet(&Packet::new(
             Guid::default(),
             PacketData::Init { max_players },
@@ -364,24 +330,8 @@ impl Client {
                     ..PlayerData::default()
                 };
 
-                let local_udp_addr =
-                    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), udp_port);
-                let udp = UdpSocket::bind(local_udp_addr).await?;
-                let local_udp_addr = udp.local_addr().expect("Failed to unwrap udp port");
-                tracing::debug!("Binding udp to: {:?}", local_udp_addr);
-
-                tracing::debug!("setting new udp connection");
-                let udp_conn = UdpConnection::new(udp, tcp_sock_addr.ip());
-
                 if start_udp_handshake {
                     tracing::debug!("Starting udp handshake");
-                    conn.write_packet(&Packet::new(
-                        Guid::default(),
-                        PacketData::UdpInit {
-                            port: local_udp_addr.port(),
-                        },
-                    ))
-                    .await?;
                 }
 
                 let data = Arc::new(RwLock::new(data));
@@ -398,7 +348,6 @@ impl Client {
                     to_coord,
                     from_server,
                     conn,
-                    udp_conn,
                     send_broadcast: broadcast,
                     recv_broadcast,
                 };
