@@ -88,7 +88,9 @@ impl<'a> Serializer for &'a mut SMOSerializer {
     }
 
     fn serialize_char(self, v: char) -> Result<Self::Ok, Self::Error> {
-        self.serialize_str(&v.to_string())
+        let mut b = [0; 4];
+        v.encode_utf8(&mut b);
+        self.serialize_bytes(&b[..v.len_utf8()])
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
@@ -96,6 +98,7 @@ impl<'a> Serializer for &'a mut SMOSerializer {
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
+        self.output.put_u16(v.len().try_into()?);
         self.output.put_slice(v);
         Ok(())
     }
@@ -155,12 +158,15 @@ impl<'a> Serializer for &'a mut SMOSerializer {
         value.serialize(&mut *self)
     }
 
-    fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        unimplemented!()
+    fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
+        if let Some(l) = len {
+            l.serialize(&mut *self)?;
+        }
+        Ok(self)
     }
 
     fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        unimplemented!()
+        Ok(self)
     }
 
     fn serialize_tuple_struct(
@@ -168,7 +174,7 @@ impl<'a> Serializer for &'a mut SMOSerializer {
         _name: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleStruct, Self::Error> {
-        unimplemented!()
+        Ok(self)
     }
 
     fn serialize_tuple_variant(
@@ -178,11 +184,11 @@ impl<'a> Serializer for &'a mut SMOSerializer {
         _variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        unimplemented!()
+        Ok(self)
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
-        unimplemented!()
+        Ok(self)
     }
 
     fn serialize_struct(
@@ -190,7 +196,7 @@ impl<'a> Serializer for &'a mut SMOSerializer {
         _name: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
-        unimplemented!()
+        Ok(self)
     }
 
     fn serialize_struct_variant(
