@@ -100,6 +100,8 @@ pub enum ClientInitError {
     BannedID,
     #[error("Client handshake failed")]
     BadHandshake,
+    #[error("Duplicate name/id found")]
+    DuplicateClient,
 }
 
 impl SMOError {

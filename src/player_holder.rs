@@ -1,6 +1,8 @@
-use std::{collections::HashMap, ops::Not};
+use std::{collections::HashMap, ops::Not, sync::Arc};
 
+use bimap::BiMap;
 use tokio::sync::mpsc;
+use tokio::sync::RwLock;
 
 use crate::{
     client::SyncPlayer,
@@ -43,9 +45,12 @@ impl<T> Not for PlayerSelect<T> {
 }
 
 #[derive(Default)]
+pub(crate) struct NameMap(pub Arc<RwLock<BiMap<Guid, String>>>);
+
+#[derive(Default)]
 pub(crate) struct PlayerHolder {
     pub clients: HashMap<Guid, PlayerInfo>,
-    pub client_names: SyncClientNames,
+    pub names: NameMap,
 }
 
 impl PlayerHolder {
@@ -62,20 +67,20 @@ impl PlayerHolder {
     }
 
     pub async fn players_to_guids(&self, players: &PlayerSelect<String>) -> Result<Vec<Guid>> {
-        let client_names = self.client_names.read().await;
+        let client_names = self.names.0.read().await;
 
         let select: Result<Vec<Guid>> = match players {
-            PlayerSelect::AllPlayers => Ok(self.clients.keys().copied().collect()),
+            PlayerSelect::AllPlayers => Ok(client_names.left_values().copied().collect()),
             PlayerSelect::ExcludePlayers(players) => Ok(client_names
                 .iter()
-                .filter(|(k, _)| !players.contains(k))
-                .map(|(_, v)| *v)
+                .filter(|(_, s)| !players.contains(s))
+                .map(|(u, _)| *u)
                 .collect()),
             PlayerSelect::SelectPlayers(players) => players
                 .iter()
                 .map(|name| {
                     client_names
-                        .get(name)
+                        .get_by_right(name)
                         .copied()
                         .ok_or_else(|| SMOError::InvalidName(name.to_string()))
                 })
@@ -88,7 +93,7 @@ impl PlayerHolder {
         &self,
         players: &PlayerSelect<String>,
     ) -> Result<PlayerSelect<&PlayerInfo>> {
-        let client_names = self.client_names.read().await;
+        let client_names = self.names.0.read().await;
 
         let select = match players {
             PlayerSelect::AllPlayers => PlayerSelect::AllPlayers,
@@ -97,7 +102,7 @@ impl PlayerHolder {
                     .iter()
                     .map(|name| {
                         let guid = client_names
-                            .get(name)
+                            .get_by_right(name)
                             .ok_or_else(|| SMOError::InvalidName(name.to_string()))?;
                         self.clients.get(guid).ok_or(SMOError::InvalidID(*guid))
                     })
@@ -106,8 +111,8 @@ impl PlayerHolder {
             PlayerSelect::ExcludePlayers(players) => PlayerSelect::SelectPlayers({
                 client_names
                     .iter()
-                    .filter(|(k, _)| !players.contains(k))
-                    .map(|(_, guid)| self.clients.get(guid).ok_or(SMOError::InvalidID(*guid)))
+                    .filter(|(_, s)| !players.contains(s))
+                    .map(|(guid, _)| self.clients.get(guid).ok_or(SMOError::InvalidID(*guid)))
                     .collect::<Result<_>>()?
             }),
         };

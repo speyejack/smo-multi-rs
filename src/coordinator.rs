@@ -605,10 +605,12 @@ impl Coordinator {
         let cli_guid = cli.guid;
 
         self.players
-            .client_names
+            .names
+            .0
             .write()
             .await
-            .insert(cli_name, cli_guid);
+            .insert_no_overwrite(cli_guid, cli_name)
+            .map_err(|_| SMOError::ClientInit(ClientInitError::DuplicateClient))?;
         self.players.clients.insert(
             id,
             PlayerInfo {
@@ -698,7 +700,7 @@ impl Coordinator {
         }) = self.players.clients.remove(&guid)
         {
             let name = &data.read().await.name;
-            self.players.client_names.write().await.remove(name);
+            self.players.names.0.write().await.remove_by_right(name);
             let packet = Packet::new(guid, PacketData::Disconnect);
             self.broadcast(packet.clone())?;
             let disconnect = ClientCommand::Packet(packet);
