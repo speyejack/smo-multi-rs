@@ -57,7 +57,8 @@ impl Console {
         self.view
             .get_lobby()
             .to_coord
-            .send(Command::External(command, sender));
+            .send(Command::External(command, sender))
+            .await?;
 
         let result_str = recv.await?;
         let reply_str = result_str?;
