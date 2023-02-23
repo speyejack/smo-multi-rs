@@ -154,6 +154,7 @@ impl Coordinator {
     }
 
     async fn handle_external_cmd(&mut self, cmd: ExternalCommand) -> Result<String> {
+        tracing::trace!("Handling external cmd");
         let out_str: String = match cmd {
             ExternalCommand::Player { players, command } => match command {
                 PlayerCommand::Send {
