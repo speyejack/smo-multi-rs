@@ -53,7 +53,8 @@ impl JsonApi {
             if read_count.is_err() {
                 continue;
             }
-            let json_str = serde_json::from_slice(&buff[..read_count.unwrap()]);
+
+            let json_str = String::from_utf8(buff[..read_count.unwrap()].to_vec());
             if let Ok(json_str) = json_str {
                 let result = self.handle(stream, ip, json_str).await;
                 if let Err(e) = result {
