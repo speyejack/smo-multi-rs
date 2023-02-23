@@ -1,6 +1,9 @@
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
 use serde::Deserialize;
 use serde_json::{from_str, json, Value};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt, BufWriter};
+use tokio::net::{TcpListener, TcpStream};
 
 use crate::coordinator::Coordinator;
 use crate::json_api::{BlockClients, JsonApiCommands, JsonApiStatus};
@@ -8,18 +11,69 @@ use crate::lobby::LobbyView;
 use crate::net::connection::Connection;
 use crate::types::Result;
 
-pub(crate) struct JsonApi {}
+pub(crate) struct JsonApi {
+    listener: TcpListener,
+    view: LobbyView,
+}
 
 impl JsonApi {
-    pub async fn handle(view: &LobbyView, conn: Connection, json_str: String) -> Result<()> {
+    pub async fn create(view: LobbyView) -> Result<Option<Self>> {
         let settings = view.get_lobby().settings.read().await;
+        if !settings.json_api.enabled {
+            return Ok(None);
+        }
+        // TcpListener.bind.json_api.port
+        let listener = TcpListener::bind(SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::BROADCAST),
+            settings.json_api.port,
+        ))
+        .await?;
+        drop(settings);
+
+        Ok(Some(Self { listener, view }))
+    }
+
+    pub async fn loop_events(mut self) -> Result<()> {
+        loop {
+            let (stream, ip): (TcpStream, SocketAddr) = tokio::select! {
+                conn = self.listener.accept() => {
+                    conn?
+                },
+                _ = self.view.get_server_recv().recv() => {
+                    return Ok(())
+                }
+            };
+
+            let mut stream = BufWriter::new(stream);
+            let mut buff = [0; 1000];
+            let read_count = stream.read(&mut buff).await;
+            if read_count.is_err() {
+                continue;
+            }
+            let json_str = serde_json::from_slice(&buff[..read_count.unwrap()]);
+            if let Ok(json_str) = json_str {
+                let result = self.handle(stream, ip, json_str).await;
+                if let Err(e) = result {
+                    tracing::error!("Json api: {}", e);
+                }
+            }
+        }
+    }
+
+    pub async fn handle(
+        &mut self,
+        mut socket: BufWriter<TcpStream>,
+        addr: SocketAddr,
+        json_str: String,
+    ) -> Result<()> {
+        let settings = self.view.get_lobby().settings.read().await;
 
         if !settings.json_api.enabled {
             return Ok(());
         }
 
-        if BlockClients::is_blocked(&conn).await {
-            tracing::info!("Rejected blocked client {}", conn.addr.ip());
+        if BlockClients::is_blocked(&addr).await {
+            tracing::info!("Rejected blocked client {}", addr.ip());
             return Ok(());
         }
 
@@ -27,8 +81,8 @@ impl JsonApi {
         let packet: JsonApiPacket = match from_str(&json_str) {
             Ok(p) => p,
             Err(_) => {
-                tracing::warn!("Invalid request from {}", conn.addr.ip());
-                BlockClients::fail(&conn).await;
+                tracing::warn!("Invalid request from {}", addr.ip());
+                BlockClients::fail(&addr).await;
                 return Ok(());
             }
         };
@@ -36,38 +90,39 @@ impl JsonApi {
         let req: JsonApiRequest = packet.request;
 
         if !["Status", "Command", "Permissions"].contains(&&*req.kind) {
-            tracing::warn!("Invalid Type from {}", conn.addr.ip());
-            BlockClients::fail(&conn).await;
+            tracing::warn!("Invalid Type from {}", addr.ip());
+            BlockClients::fail(&addr).await;
             return Ok(());
         }
 
         if !settings.json_api.tokens.contains_key(&req.token) {
-            tracing::warn!("Invalid Token from {}", conn.addr.ip());
-            BlockClients::fail(&conn).await;
+            tracing::warn!("Invalid Token from {}", addr.ip());
+            BlockClients::fail(&addr).await;
             return Ok(());
         }
 
         let response: Value = match req.kind.as_str() {
-            "Status" => json!(JsonApiStatus::create(view, &req.token).await),
+            "Status" => json!(JsonApiStatus::create(&self.view, &req.token).await),
             "Permissions" => json!({
                 "Permissions": settings.json_api.tokens[&req.token],
             }),
             "Command" => {
                 drop(settings);
-                json!(JsonApiCommands::process(view, &req.token, &req.data).await)
+                json!(JsonApiCommands::process(&mut self.view, &req.token, &req.data).await)
             }
             _ => json!({
                 "Error": ([req.kind, " is not implemented yet".to_string()].join("")),
             }),
         };
 
-        BlockClients::redeem(&conn).await;
-        JsonApi::respond(conn, response.to_string()).await
+        BlockClients::redeem(&addr).await;
+        JsonApi::respond(&mut socket, response.to_string()).await
     }
 
-    async fn respond(mut conn: Connection, response_str: String) -> Result<()> {
-        conn.socket.write(&response_str.as_bytes()).await?;
-        conn.socket.flush().await?;
+    async fn respond(mut socket: &mut BufWriter<TcpStream>, response_str: String) -> Result<()> {
+        // TODO Repeat write until all bytes are sent
+        let _ = socket.write(&response_str.as_bytes()).await?;
+        socket.flush().await?;
         tracing::debug!("response: {}", response_str);
         Ok(())
     }

@@ -2,6 +2,7 @@ use crate::{
     cmds::ClientCommand,
     console::Console,
     coordinator::{load_shines, Coordinator, ShineBag},
+    json_api::JsonApi,
     listener::Listener,
     lobby::{Lobby, LobbyView},
     settings::Settings,
@@ -81,11 +82,15 @@ impl Server {
     }
 
     pub async fn spawn_full_server(self) -> Result<()> {
-        let console = Console::new(LobbyView::new(&self.lobby));
-        let _rx = self.lobby.lobby_broadcast.subscribe();
+        let view = LobbyView::new(&self.lobby);
+        let console = Console::new(view.clone());
+        let json_api = JsonApi::create(view).await?;
         let serv_task = tokio::task::spawn(self.listener.listen_for_clients());
         let coord_task = tokio::task::spawn(self.coord.handle_commands());
         let parser_task = tokio::task::spawn(console.loop_read_commands());
+        if let Some(api) = json_api {
+            let api_task = tokio::task::spawn(api.loop_events());
+        }
 
         let _results = tokio::join!(serv_task, coord_task, parser_task);
         Ok(())
