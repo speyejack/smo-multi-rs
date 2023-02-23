@@ -2,7 +2,7 @@
 
 TOKEN="SECRET_TOKEN_12345"
 HOST="localhost"
-PORT="1027"
+PORT="1030"
 
 DIR=`dirname "$0"`
 [ -f "$DIR/test.env" ] && source "$DIR/test.env"
@@ -16,7 +16,7 @@ fi
 
 echo -n "{\"API_JSON_REQUEST\":{\"Token\":\"${TOKEN}\",\"Type\":\"$TYPE\"$DATA}}"  \
   | timeout 5.0 nc $HOST $PORT  \
-  | tail -c+23  \
   | jq  \
-;
+  # | tail -c+23  \
+
 echo ""
