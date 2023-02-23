@@ -1,6 +1,5 @@
 use bytes::{Buf, BufMut, BytesMut};
 
-
 use smoo::guid::Guid;
 use smoo::net::encoding::{Decodable, Encodable};
 use smoo::net::{Packet, PacketData, TagUpdate};

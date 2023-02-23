@@ -4,14 +4,12 @@ use crate::{
     coordinator::{load_shines, Coordinator, ShineBag},
     listener::Listener,
     lobby::{Lobby, LobbyView},
-    settings::{Settings},
+    settings::Settings,
     types::Result,
 };
 
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{broadcast, mpsc, RwLock};
-
-
 
 pub struct Server {
     pub lobby: Lobby,

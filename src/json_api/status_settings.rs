@@ -1,30 +1,22 @@
-use serde_json::{ json, Map, Value };
-
+use serde_json::{json, Map, Value};
 
 use crate::coordinator::Coordinator;
 
-
-pub(in crate::json_api) struct JsonApiStatusSettings {
-}
-
+pub(in crate::json_api) struct JsonApiStatusSettings {}
 
 impl JsonApiStatusSettings {
-    pub async fn create(
-        coord : &Coordinator,
-        token : &String
-    ) -> Option<Value> {
+    pub async fn create(coord: &Coordinator, token: &String) -> Option<Value> {
         let settings = coord.settings.read().await;
 
-        let permissions: Vec<String> = settings
-            .json_api
-            .tokens[token]
+        let permissions: Vec<String> = settings.json_api.tokens[token]
             .iter()
             .filter(|s| s.len() > 16 && &s[..16] == "Status/Settings/")
             .map(|s| s[16..].to_string())
-            .collect()
-        ;
+            .collect();
 
-        if permissions.len() == 0 { return None }
+        if permissions.len() == 0 {
+            return None;
+        }
 
         let mut has_results = false;
         let mut jsett = json!(&*settings);
@@ -50,8 +42,7 @@ impl JsonApiStatusSettings {
                         JsonApiStatusSettings::missing_setting(&perm);
                         continue 'outer;
                     }
-                }
-                else {
+                } else {
                     // key was already set to a concrete value by an earlier permission,
                     // meaning that it can't contain sub keys, because it isn't an object.
                     JsonApiStatusSettings::missing_setting(&perm);
@@ -84,7 +75,9 @@ impl JsonApiStatusSettings {
             }
         }
 
-        if !has_results { return None }
+        if !has_results {
+            return None;
+        }
 
         Some(result)
     }
