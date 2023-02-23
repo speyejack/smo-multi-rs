@@ -5,6 +5,7 @@ use crate::coordinator::Coordinator;
 use crate::lobby::LobbyView;
 use crate::net::{Packet, PacketData};
 use crate::stages::Stages;
+use crate::types::Vector3;
 
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -23,6 +24,9 @@ pub(in crate::json_api) struct JsonApiStatusPlayer {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     scenario: Option<i8>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    location: Option<Vector3>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     costume: Option<JsonApiStatusPlayerCostume>,
@@ -110,6 +114,11 @@ impl JsonApiStatusPlayer {
                     _ => None,
                 }
             };
+            let location = if !permissions.contains("Status/Players/Location") {
+                None
+            } else {
+                Some(client.last_position)
+            };
             let ipv4 = if !permissions.contains("Status/Players/IPv4") {
                 None
             } else {
@@ -122,6 +131,7 @@ impl JsonApiStatusPlayer {
                 kingdom,
                 stage,
                 scenario,
+                location,
                 costume,
                 ipv4,
             };

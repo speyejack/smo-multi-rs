@@ -45,6 +45,7 @@ pub struct PlayerData {
     pub is_2d: bool,
     pub is_seeking: bool,
     pub last_game_packet: Option<Packet>,
+    pub last_position: Vector3,
     pub speedrun_start: bool,
     pub loaded_save: bool,
     pub time: Duration,
@@ -61,6 +62,7 @@ impl PlayerData {
             scenario: Default::default(),
             is_2d: Default::default(),
             is_seeking: Default::default(),
+            last_position: Default::default(),
             last_game_packet: Default::default(),
             speedrun_start: Default::default(),
             loaded_save: Default::default(),
@@ -264,6 +266,10 @@ impl Client {
                         ref mut rot,
                         ..
                     } => {
+                        let mut data = self.lobby.get_mut_client(&self.guid)?;
+                        *data.last_position = *pos.clone();
+                        drop(data);
+
                         let settings = self.lobby.settings.read().await;
                         if settings.flip.enabled
                             && settings.flip.pov.is_self_flip()

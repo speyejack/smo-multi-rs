@@ -24,16 +24,18 @@ impl JsonApi {
         }
         // TcpListener.bind.json_api.port
         let listener = TcpListener::bind(SocketAddr::new(
-            IpAddr::V4(Ipv4Addr::BROADCAST),
+            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
             settings.json_api.port,
         ))
         .await?;
         drop(settings);
 
+        tracing::trace!("Created json api");
         Ok(Some(Self { listener, view }))
     }
 
     pub async fn loop_events(mut self) -> Result<()> {
+        tracing::trace!("Starting json loop");
         loop {
             let (stream, ip): (TcpStream, SocketAddr) = tokio::select! {
                 conn = self.listener.accept() => {
@@ -44,6 +46,7 @@ impl JsonApi {
                 }
             };
 
+            tracing::trace!("Got json event");
             let mut stream = BufWriter::new(stream);
             let mut buff = [0; 1000];
             let read_count = stream.read(&mut buff).await;
