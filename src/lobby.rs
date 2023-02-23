@@ -1,4 +1,4 @@
-use std::{collections::hash_map::RandomState, hash::BuildHasher, sync::Arc};
+use std::{collections::hash_map::RandomState, sync::Arc};
 
 use dashmap::{
     mapref::one::{Ref, RefMut},

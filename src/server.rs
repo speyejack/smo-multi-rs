@@ -4,14 +4,14 @@ use crate::{
     coordinator::{load_shines, Coordinator, ShineBag},
     listener::Listener,
     lobby::{Lobby, LobbyView},
-    settings::{Settings, SyncSettings},
+    settings::{Settings},
     types::Result,
 };
 
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{broadcast, mpsc, RwLock};
 
-use crate::cmds::Command;
+
 
 pub struct Server {
     pub lobby: Lobby,
@@ -26,7 +26,7 @@ impl Server {
 
         let local_bind_addr = SocketAddr::new(settings.server.address, settings.server.port);
 
-        let shines = if settings.persist_shines.enabled {
+        let _shines = if settings.persist_shines.enabled {
             let result = load_shines(&settings.persist_shines.filename);
 
             match result {
@@ -84,7 +84,7 @@ impl Server {
 
     pub async fn spawn_full_server(self) -> Result<()> {
         let console = Console::new(LobbyView::new(&self.lobby));
-        let rx = self.lobby.lobby_broadcast.subscribe();
+        let _rx = self.lobby.lobby_broadcast.subscribe();
         let serv_task = tokio::task::spawn(self.listener.listen_for_clients());
         let coord_task = tokio::task::spawn(self.coord.handle_commands());
         let parser_task = tokio::task::spawn(console.loop_read_commands());

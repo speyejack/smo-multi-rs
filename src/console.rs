@@ -3,19 +3,16 @@ use crate::{
         console::{FlipCommand, ScenarioCommand, ShineArg, TagCommand, UdpCommand},
         Command, ConsoleCommand, ExternalCommand, PlayerCommand, ServerWideCommand, ShineCommand,
     },
+    coordinator::unalias_map,
     guid::Guid,
-    lobby::{self, Lobby, LobbyView},
-    net::{PacketData, TagUpdate},
+    lobby::LobbyView,
     player_holder::PlayerSelect,
     settings::{load_settings, save_settings},
     types::{Result, SMOError},
 };
 use clap::Parser;
-use std::{collections::HashSet, io::Write, time::Duration};
-use tokio::{
-    select,
-    sync::{broadcast, mpsc, oneshot},
-};
+use std::{io::Write, time::Duration};
+use tokio::{select, sync::oneshot};
 
 // Call this console
 #[derive(Parser, Debug)]
@@ -74,10 +71,21 @@ impl Console {
                 let players: PlayerSelect<Guid> = PlayerSelect::AllPlayers;
                 let players = players.into_guid_vec(&self.view)?;
 
+                let actual_stage = unalias_map(&stage);
+                let actual_stage = match (actual_stage, force) {
+                    (Some(s), _) => s,
+                    (None, true) => stage.clone(),
+                    (None, false) => {
+                        return Err(SMOError::InvalidConsoleArg(
+                            "Invalid stage name.".to_string(),
+                        ))
+                    }
+                };
+
                 self.request_comm(ExternalCommand::Player {
                     players,
                     command: PlayerCommand::Send {
-                        stage: stage.clone(),
+                        stage: actual_stage,
                         id: "".to_string(),
                         scenario: -1,
                     },
@@ -95,10 +103,21 @@ impl Console {
                 let players: PlayerSelect<String> = (&players[..]).into();
                 let players = players.into_guid_vec(&self.view).await?;
 
+                let actual_stage = unalias_map(&stage);
+                let actual_stage = match (actual_stage, force) {
+                    (Some(s), _) => s,
+                    (None, true) => stage.clone(),
+                    (None, false) => {
+                        return Err(SMOError::InvalidConsoleArg(
+                            "Invalid stage name.".to_string(),
+                        ))
+                    }
+                };
+
                 self.request_comm(ExternalCommand::Player {
                     players,
                     command: PlayerCommand::Send {
-                        stage: stage.clone(),
+                        stage: actual_stage,
                         id,
                         scenario,
                     },
@@ -116,6 +135,7 @@ impl Console {
                 })
                 .await?;
                 let banned = players;
+                // TODO Fix banned problems
 
                 let players = &self.view.get_lobby().players;
                 let ips = players.iter().filter_map(|x| x.value().ipv4).collect();
@@ -362,7 +382,7 @@ impl Console {
                 }
             },
             ConsoleCommand::Udp(udpcmd) => match udpcmd {
-                UdpCommand::Init { player } => unimplemented!("Udp is being phased out"),
+                UdpCommand::Init { player: _ } => unimplemented!("Udp is being phased out"),
                 UdpCommand::Auto { should_auto } => {
                     let mut settings = self.view.get_mut_settings().write().await;
                     settings.udp.initiate_handshake = should_auto;

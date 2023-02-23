@@ -1,28 +1,20 @@
 use crate::{
-    client::PlayerData,
     cmds::{
-        console::{FlipCommand, ScenarioCommand, ShineArg, TagCommand, UdpCommand},
-        ClientCommand, Command, ConsoleCommand, ExternalCommand, PlayerCommand, Players,
-        ServerCommand, ServerWideCommand, ShineCommand,
+        ClientCommand, Command, ExternalCommand, PlayerCommand, Players, ServerCommand,
+        ShineCommand,
     },
     guid::Guid,
-    lobby::{Lobby, PlayerMap},
+    lobby::Lobby,
     net::{ConnectionType, Packet, PacketData, TagUpdate},
-    player_holder::{ClientChannel, PlayerSelect},
-    settings::{load_settings, save_settings, SyncSettings},
-    types::{ClientInitError, Result, SMOError},
+    player_holder::ClientChannel,
+    types::Result,
 };
 
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio::{
     fs::File,
     io::AsyncWriteExt,
     sync::{broadcast, mpsc, RwLock},
-    time,
 };
 use tracing::{info_span, Instrument};
 
@@ -292,7 +284,7 @@ impl Coordinator {
     }
 
     async fn add_client(&mut self, cmd: ServerCommand) -> Result<()> {
-        let (mut cli, packet, data, comm) = match cmd {
+        let (cli, packet, data, comm) = match cmd {
             ServerCommand::NewPlayer {
                 cli,
                 connect_packet,
@@ -302,7 +294,7 @@ impl Coordinator {
             _ => unreachable!(),
         };
 
-        let (connection_type, client_name) = match &packet.data {
+        let (_connection_type, client_name) = match &packet.data {
             PacketData::Connect {
                 c_type,
                 client_name,
@@ -453,7 +445,7 @@ async fn client_sync_shines(
     Ok(())
 }
 
-fn unalias_map(alias: &str) -> String {
+pub fn unalias_map(alias: &str) -> Option<String> {
     let unalias = match alias {
         "cap" => "CapWorldHomeStage",
         "cascade" => "WaterfallWorldHomeStage",
@@ -472,10 +464,10 @@ fn unalias_map(alias: &str) -> String {
         "mush" => "PeachWorldHomeStage",
         "dark" => "Special1WorldHomeStage",
         "darker" => "Special2WorldHomeStage",
-        s => s,
+        _ => return None,
     };
 
-    unalias.to_string()
+    Some(unalias.to_string())
 }
 
 async fn save_shines(filename: String, shines: SyncShineBag) -> Result<()> {

@@ -4,13 +4,9 @@ use crate::{
     types::Result,
 };
 use std::net::SocketAddr;
-use tokio::{
-    net::TcpListener,
-    select,
-    sync::{broadcast, mpsc},
-};
+use tokio::{net::TcpListener, select, sync::broadcast};
 
-use crate::{client::Client, cmds::Command, settings::SyncSettings};
+use crate::client::Client;
 
 pub struct Listener {
     pub cli_broadcast: broadcast::Sender<ClientCommand>,
@@ -71,7 +67,6 @@ impl Listener {
             }
 
             let to_coord = self.lobby.to_coord.clone();
-            let settings = self.lobby.settings.clone();
             let udp_port = udp_port_data.0 + udp_offset;
             let broadcast = self.cli_broadcast.clone();
             udp_offset += 1;

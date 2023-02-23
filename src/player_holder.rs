@@ -1,17 +1,17 @@
 use std::collections::HashSet;
-use std::{collections::HashMap, ops::Not, sync::Arc};
+use std::{ops::Not, sync::Arc};
 
 use bimap::BiMap;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
 
-use crate::client::PlayerData;
+
 use crate::cmds::Players;
 use crate::lobby::LobbyView;
 use crate::{
     cmds::ClientCommand,
     guid::Guid,
-    types::{Result, SMOError},
+    types::{Result},
 };
 
 pub(crate) type ClientChannel = mpsc::Sender<ClientCommand>;

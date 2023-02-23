@@ -4,7 +4,6 @@ use crate::{
     lobby::Lobby,
     net::{connection::Connection, udp_conn::UdpConnection, ConnectionType, Packet, PacketData},
     player_holder::ClientChannel,
-    settings::SyncSettings,
     types::{ChannelError, ClientInitError, Costume, ErrorSeverity, Result, SMOError, Vector3},
 };
 use dashmap::mapref::one::{Ref, RefMut};
@@ -12,14 +11,13 @@ use nalgebra::UnitQuaternion;
 use std::{
     collections::{hash_map::RandomState, HashSet},
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::Arc,
     time::Duration,
 };
 use tokio::{
     io::AsyncWriteExt,
     net::{TcpStream, UdpSocket},
     select,
-    sync::{broadcast, mpsc, RwLock},
+    sync::{broadcast, mpsc},
 };
 use tracing::Level;
 
