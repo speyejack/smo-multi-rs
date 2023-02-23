@@ -161,6 +161,10 @@ impl Client {
                 ref mut pos,
                 ..
             } => {
+                let mut data = self.lobby.get_mut_client(&self.guid)?;
+                *data.last_position = **pos;
+                drop(data);
+
                 let settings = self.lobby.settings.read().await;
                 if settings.flip.enabled
                     && settings.flip.pov.is_others_flip()
@@ -266,10 +270,6 @@ impl Client {
                         ref mut rot,
                         ..
                     } => {
-                        let mut data = self.lobby.get_mut_client(&self.guid)?;
-                        *data.last_position = *pos.clone();
-                        drop(data);
-
                         let settings = self.lobby.settings.read().await;
                         if settings.flip.enabled
                             && settings.flip.pov.is_self_flip()
