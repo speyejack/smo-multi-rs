@@ -1,5 +1,6 @@
 use crate::{
     cmds::{ClientCommand, ServerWideCommand},
+    lobby::Lobby,
     types::Result,
 };
 use std::net::SocketAddr;
@@ -12,13 +13,12 @@ use tokio::{
 use crate::{client::Client, cmds::Command, settings::SyncSettings};
 
 pub struct Listener {
-    pub to_coord: mpsc::Sender<Command>,
     pub cli_broadcast: broadcast::Sender<ClientCommand>,
     pub server_broadcast: broadcast::Receiver<ServerWideCommand>,
-    pub settings: SyncSettings,
     pub tcp_bind_addr: SocketAddr,
     pub udp_port_addrs: Option<(u16, u16)>,
     pub listener: Option<TcpListener>,
+    pub lobby: Lobby,
 }
 
 impl Listener {
@@ -57,17 +57,21 @@ impl Listener {
 
             // Fast fail any banned ips before resource allocation
             {
-                let settings = self.settings.read().await;
+                let settings = self.lobby.settings.read().await;
                 let banned_ips = &settings.ban_list.ip_addresses;
 
                 if banned_ips.contains(&addr.ip()) {
                     tracing::warn!("Banned ip tried to connect: {}", addr.ip());
                     continue;
                 }
+
+                if settings.server.max_players as usize <= self.lobby.players.len() {
+                    tracing::warn!("Connection attempt with too many players");
+                }
             }
 
-            let to_coord = self.to_coord.clone();
-            let settings = self.settings.clone();
+            let to_coord = self.lobby.to_coord.clone();
+            let settings = self.lobby.settings.clone();
             let udp_port = udp_port_data.0 + udp_offset;
             let broadcast = self.cli_broadcast.clone();
             udp_offset += 1;
@@ -75,10 +79,10 @@ impl Listener {
 
             tracing::debug!("New client attempting to connect");
 
+            let lobby = self.lobby.clone();
             tokio::spawn(async move {
                 let cli_result =
-                    Client::initialize_client(socket, to_coord, broadcast, udp_port, settings)
-                        .await;
+                    Client::initialize_client(socket, to_coord, broadcast, udp_port, lobby).await;
 
                 if let Err(e) = cli_result {
                     tracing::warn!("Client failed to begin: {}", e)

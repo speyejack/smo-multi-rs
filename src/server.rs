@@ -1,8 +1,9 @@
 use crate::{
     cmds::ClientCommand,
-    console::parse_commands,
+    console::Console,
     coordinator::{load_shines, Coordinator, ShineBag},
     listener::Listener,
+    lobby::{Lobby, LobbyView},
     settings::{Settings, SyncSettings},
     types::Result,
 };
@@ -13,8 +14,7 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use crate::cmds::Command;
 
 pub struct Server {
-    pub settings: SyncSettings,
-    pub to_coord: mpsc::Sender<Command>,
+    pub lobby: Lobby,
     pub cli_broadcast: broadcast::Sender<ClientCommand>,
     pub listener: Listener,
     pub coord: Coordinator,
@@ -48,31 +48,25 @@ impl Server {
         let (cli_broadcast, _) = broadcast::channel(100);
 
         let (serv_send, serv_recv) = broadcast::channel(1);
+
+        let lobby = Lobby::new(settings, to_coord, serv_send);
         let listener = Listener {
             server_broadcast: serv_recv,
-            settings: settings.clone(),
-            to_coord: to_coord.clone(),
             cli_broadcast: cli_broadcast.clone(),
 
             tcp_bind_addr: local_bind_addr,
             udp_port_addrs: udp_ports,
             listener: None,
+            lobby: lobby.clone(),
         };
 
-        let coord = Coordinator::new(
-            settings.clone(),
-            from_clients,
-            cli_broadcast.clone(),
-            serv_send,
-            shines,
-        );
+        let coord = Coordinator::new(lobby.clone(), from_clients, cli_broadcast.clone());
 
         Server {
-            settings,
-            to_coord,
             listener,
             coord,
             cli_broadcast,
+            lobby,
         }
     }
 
@@ -89,10 +83,11 @@ impl Server {
     }
 
     pub async fn spawn_full_server(self) -> Result<()> {
-        let rx = self.coord.server_broadcast.subscribe();
+        let console = Console::new(LobbyView::new(&self.lobby));
+        let rx = self.lobby.lobby_broadcast.subscribe();
         let serv_task = tokio::task::spawn(self.listener.listen_for_clients());
         let coord_task = tokio::task::spawn(self.coord.handle_commands());
-        let parser_task = tokio::task::spawn(parse_commands(self.to_coord.clone(), rx));
+        let parser_task = tokio::task::spawn(console.loop_read_commands());
 
         let _results = tokio::join!(serv_task, coord_task, parser_task);
         Ok(())

@@ -1,13 +1,16 @@
 use crate::{
     cmds::{ClientCommand, Command, ServerCommand},
     guid::Guid,
-    net::{connection::Connection, udp_conn::UdpConnection, Packet, PacketData},
+    lobby::Lobby,
+    net::{connection::Connection, udp_conn::UdpConnection, ConnectionType, Packet, PacketData},
+    player_holder::ClientChannel,
     settings::SyncSettings,
     types::{ChannelError, ClientInitError, Costume, ErrorSeverity, Result, SMOError, Vector3},
 };
+use dashmap::mapref::one::{Ref, RefMut};
 use nalgebra::UnitQuaternion;
 use std::{
-    collections::HashSet,
+    collections::{hash_map::RandomState, HashSet},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
     time::Duration,
@@ -20,12 +23,9 @@ use tokio::{
 };
 use tracing::Level;
 
-pub type SyncPlayer = Arc<RwLock<PlayerData>>;
-
 #[derive(Debug)]
 pub struct Client {
     pub display_name: String,
-    pub player: SyncPlayer,
     pub guid: Guid,
     pub alive: bool,
     pub conn: Connection,
@@ -34,10 +34,11 @@ pub struct Client {
     pub from_server: mpsc::Receiver<ClientCommand>,
     pub send_broadcast: broadcast::Sender<ClientCommand>,
     pub recv_broadcast: broadcast::Receiver<ClientCommand>,
-    pub settings: SyncSettings,
+
+    lobby: Lobby,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PlayerData {
     pub ipv4: Option<IpAddr>,
     pub name: String,
@@ -50,6 +51,26 @@ pub struct PlayerData {
     pub loaded_save: bool,
     pub time: Duration,
     pub costume: Option<Costume>,
+    pub channel: ClientChannel,
+}
+
+impl PlayerData {
+    fn new(channel: ClientChannel) -> Self {
+        Self {
+            ipv4: Default::default(),
+            name: Default::default(),
+            shine_sync: Default::default(),
+            scenario: Default::default(),
+            is_2d: Default::default(),
+            is_seeking: Default::default(),
+            last_game_packet: Default::default(),
+            speedrun_start: Default::default(),
+            loaded_save: Default::default(),
+            time: Default::default(),
+            costume: Default::default(),
+            channel,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -140,21 +161,21 @@ impl Client {
                 ref mut pos,
                 ..
             } => {
-                let settings = self.settings.read().await;
+                let settings = self.lobby.settings.read().await;
                 if settings.flip.enabled
                     && settings.flip.pov.is_others_flip()
                     && settings.flip.players.get(&packet.id).is_some()
                 {
                     let angle = std::f32::consts::PI;
                     let rot_quad = *(UnitQuaternion::from_axis_angle(&Vector3::z_axis(), angle));
-                    let data = self.player.read().await;
+                    let data = self.get_player();
                     *pos += get_mario_size(data.is_2d) * Vector3::y();
                     *rot *= rot_quad;
                 }
                 PacketDestination::Coordinator
             }
             PacketData::Costume(costume) => {
-                let mut data = self.player.write().await;
+                let mut data = self.get_player_mut();
                 data.costume = Some(costume.clone());
                 data.loaded_save = true;
                 PacketDestination::Coordinator
@@ -164,7 +185,7 @@ impl Client {
                 scenario_num,
                 stage,
             } => {
-                let mut data = self.player.write().await;
+                let mut data = self.get_player_mut();
                 data.is_2d = *is_2d;
                 data.scenario = *scenario_num;
                 if stage == "CapWorldHomeStage" && *scenario_num == 0 {
@@ -181,7 +202,7 @@ impl Client {
                 seconds,
                 minutes,
             } => {
-                let mut data = self.player.write().await;
+                let mut data = self.get_player_mut();
                 match update_type {
                     crate::net::TagUpdate::Time => {
                         data.time = Duration::from_secs(*seconds as u64 + *minutes as u64 * 60);
@@ -193,7 +214,7 @@ impl Client {
                 PacketDestination::Broadcast
             }
             PacketData::Shine { shine_id, .. } => {
-                let mut data = self.player.write().await;
+                let mut data = self.get_player_mut();
                 if data.loaded_save {
                     data.shine_sync.insert(*shine_id);
                 }
@@ -245,7 +266,7 @@ impl Client {
                         ref mut rot,
                         ..
                     } => {
-                        let settings = self.settings.read().await;
+                        let settings = self.lobby.settings.read().await;
                         if settings.flip.enabled
                             && settings.flip.pov.is_self_flip()
                             && settings.flip.players.get(&self.guid).is_some()
@@ -254,7 +275,7 @@ impl Client {
                             let angle = std::f32::consts::PI;
                             let rot_quad =
                                 *(UnitQuaternion::from_axis_angle(&Vector3::z_axis(), angle));
-                            let data = self.player.read().await;
+                            let data = self.get_player();
                             *pos += get_mario_size(data.is_2d) * Vector3::y();
                             *rot *= rot_quad;
                         }
@@ -278,7 +299,7 @@ impl Client {
                         *port = new_port;
                     }
                     PacketData::Shine { shine_id, .. } => {
-                        let mut data = self.player.write().await;
+                        let mut data = self.get_player_mut();
                         data.shine_sync.insert(shine_id);
                     }
                     PacketData::Disconnect {} => {
@@ -332,12 +353,12 @@ impl Client {
         to_coord: mpsc::Sender<Command>,
         broadcast: broadcast::Sender<ClientCommand>,
         udp_port: u16,
-        settings: SyncSettings,
+        lobby: Lobby,
     ) -> Result<()> {
         let (to_cli, from_server) = mpsc::channel(10);
         let tcp_sock_addr = socket.peer_addr().expect("Couldn't get tcp peer address");
 
-        let l_set = settings.read().await;
+        let l_set = lobby.settings.read().await;
         let max_players = l_set.server.max_players;
         let start_udp_handshake = l_set.udp.initiate_handshake;
         drop(l_set);
@@ -356,12 +377,31 @@ impl Client {
         let new_player = match connect.data {
             PacketData::Connect {
                 client_name: ref name,
+                ref c_type,
                 ..
             } => {
+                let settings = lobby.settings.read().await;
+                if settings.ban_list.players.contains(&connect.id) {
+                    return Err(SMOError::ClientInit(ClientInitError::BannedID));
+                }
+                drop(settings);
+
+                match c_type {
+                    ConnectionType::FirstConnection => {
+                        let names = lobby.names.0.read().await;
+                        let entry_exists =
+                            names.contains_left(&connect.id) || names.contains_right(name);
+                        if entry_exists {
+                            return Err(SMOError::ClientInit(ClientInitError::DuplicateClient));
+                        }
+                    }
+                    ConnectionType::Reconnecting => {}
+                }
+
                 let data = PlayerData {
                     name: name.clone(),
                     ipv4: Some(conn.addr.ip()),
-                    ..PlayerData::default()
+                    ..PlayerData::new(to_cli.clone())
                 };
 
                 let local_udp_addr =
@@ -384,29 +424,28 @@ impl Client {
                     .await?;
                 }
 
-                let data = Arc::new(RwLock::new(data));
                 let recv_broadcast = broadcast.subscribe();
 
                 let to_coord = to_coord.clone();
                 tracing::debug!("Created client data");
                 let client = Client {
                     display_name: name.trim_matches(char::from(0)).to_string(),
-                    player: data,
                     guid: connect.id,
                     alive: true,
-                    settings,
                     to_coord,
                     from_server,
                     conn,
                     udp_conn,
                     send_broadcast: broadcast,
                     recv_broadcast,
+                    lobby,
                 };
 
                 tracing::debug!("Initialized player");
 
                 Ok(Command::Server(ServerCommand::NewPlayer {
                     cli: client,
+                    data,
                     connect_packet: Box::new(connect),
                     comm: to_cli,
                 }))
@@ -416,5 +455,19 @@ impl Client {
 
         to_coord.send(new_player).await?;
         Ok(())
+    }
+
+    fn get_player(&self) -> Ref<'_, Guid, PlayerData, RandomState> {
+        self.lobby
+            .players
+            .get(&self.guid)
+            .expect("Client couldnt find its player data")
+    }
+
+    fn get_player_mut(&self) -> RefMut<'_, Guid, PlayerData, RandomState> {
+        self.lobby
+            .players
+            .get_mut(&self.guid)
+            .expect("Client couldnt find its player data")
     }
 }

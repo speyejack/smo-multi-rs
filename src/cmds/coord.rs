@@ -1,4 +1,8 @@
-use crate::{client::Client, guid::Guid, net::Packet};
+use crate::{
+    client::{Client, PlayerData},
+    guid::Guid,
+    net::Packet,
+};
 
 use tokio::sync::mpsc;
 
@@ -8,6 +12,7 @@ use super::ClientCommand;
 pub enum ServerCommand {
     NewPlayer {
         cli: Client,
+        data: PlayerData,
         connect_packet: Box<Packet>,
         comm: mpsc::Sender<ClientCommand>,
     },

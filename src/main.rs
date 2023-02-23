@@ -4,6 +4,7 @@ mod console;
 mod coordinator;
 mod guid;
 mod listener;
+mod lobby;
 mod net;
 mod player_holder;
 mod server;
