@@ -16,7 +16,7 @@ use crate::{
     types::{Result, SMOError},
 };
 
-pub type PlayerMap = DashMap<Guid, PlayerData>;
+pub type PlayerMap = Arc<DashMap<Guid, PlayerData>>;
 
 #[derive(Debug)]
 pub struct Lobby {
