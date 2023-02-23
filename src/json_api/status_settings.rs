@@ -1,12 +1,12 @@
 use serde_json::{json, Map, Value};
 
-use crate::coordinator::Coordinator;
+use crate::{coordinator::Coordinator, lobby::LobbyView};
 
 pub(in crate::json_api) struct JsonApiStatusSettings {}
 
 impl JsonApiStatusSettings {
-    pub async fn create(coord: &Coordinator, token: &String) -> Option<Value> {
-        let settings = coord.settings.read().await;
+    pub async fn create(view: &LobbyView, token: &String) -> Option<Value> {
+        let settings = view.get_lobby().settings.read().await;
 
         let permissions: Vec<String> = settings.json_api.tokens[token]
             .iter()

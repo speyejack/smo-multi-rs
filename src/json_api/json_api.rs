@@ -4,14 +4,15 @@ use tokio::io::AsyncWriteExt;
 
 use crate::coordinator::Coordinator;
 use crate::json_api::{BlockClients, JsonApiCommands, JsonApiStatus};
+use crate::lobby::LobbyView;
 use crate::net::connection::Connection;
 use crate::types::Result;
 
 pub(crate) struct JsonApi {}
 
 impl JsonApi {
-    pub async fn handle(coord: &mut Coordinator, conn: Connection, json_str: String) -> Result<()> {
-        let settings = coord.settings.read().await;
+    pub async fn handle(view: &LobbyView, conn: Connection, json_str: String) -> Result<()> {
+        let settings = view.get_lobby().settings.read().await;
 
         if !settings.json_api.enabled {
             return Ok(());
@@ -47,13 +48,13 @@ impl JsonApi {
         }
 
         let response: Value = match req.kind.as_str() {
-            "Status" => json!(JsonApiStatus::create(coord, &req.token).await),
+            "Status" => json!(JsonApiStatus::create(view, &req.token).await),
             "Permissions" => json!({
                 "Permissions": settings.json_api.tokens[&req.token],
             }),
             "Command" => {
                 drop(settings);
-                json!(JsonApiCommands::process(coord, &req.token, &req.data).await)
+                json!(JsonApiCommands::process(view, &req.token, &req.data).await)
             }
             _ => json!({
                 "Error": ([req.kind, " is not implemented yet".to_string()].join("")),

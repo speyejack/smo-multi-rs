@@ -3,6 +3,7 @@ use serde_json::Value;
 
 use crate::coordinator::Coordinator;
 use crate::json_api::{JsonApiStatusPlayer, JsonApiStatusSettings};
+use crate::lobby::LobbyView;
 
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -15,10 +16,10 @@ pub(in crate::json_api) struct JsonApiStatus {
 }
 
 impl JsonApiStatus {
-    pub async fn create(coord: &Coordinator, token: &String) -> JsonApiStatus {
+    pub async fn create(view: &LobbyView, token: &String) -> JsonApiStatus {
         JsonApiStatus {
-            players: JsonApiStatusPlayer::create(coord, &token).await,
-            settings: JsonApiStatusSettings::create(coord, &token).await,
+            players: JsonApiStatusPlayer::create(view, &token).await,
+            settings: JsonApiStatusSettings::create(view, &token).await,
         }
     }
 }

@@ -1,8 +1,9 @@
 use clap::Parser;
 use serde::Serialize;
 
-use crate::console::Cli;
+use crate::console::{Cli, Console};
 use crate::coordinator::Coordinator;
+use crate::lobby::{self, LobbyView};
 
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -13,11 +14,11 @@ pub(in crate::json_api) struct JsonApiCommands {
 
 impl JsonApiCommands {
     pub async fn process(
-        coord: &mut Coordinator,
+        view: &mut LobbyView,
         token: &String,
         data: &Option<String>,
     ) -> JsonApiCommands {
-        let settings = coord.settings.read().await;
+        let settings = view.get_lobby().settings.read().await;
         let permissions = &settings.json_api.tokens[token];
 
         // no permission in general
@@ -61,9 +62,10 @@ impl JsonApiCommands {
 
         // execute command
         tracing::info!("{}", input.trim());
+        let mut console = Console::new(view.clone());
         let parsed = Cli::try_parse_from(format!("> {}", input.trim()).split(' '));
         match parsed {
-            Ok(cli) => match coord.handle_console_cmd(cli.cmd).await {
+            Ok(cli) => match console.process_command(cli).await {
                 Ok(res) => {
                     tracing::info!("{}", res);
                     return JsonApiCommands::result(res);

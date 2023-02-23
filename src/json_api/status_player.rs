@@ -2,6 +2,7 @@ use serde::Serialize;
 use std::net::IpAddr;
 
 use crate::coordinator::Coordinator;
+use crate::lobby::LobbyView;
 use crate::net::{Packet, PacketData};
 use crate::stages::Stages;
 
@@ -31,22 +32,23 @@ pub(in crate::json_api) struct JsonApiStatusPlayer {
 }
 
 impl JsonApiStatusPlayer {
-    pub async fn create(coord: &Coordinator, token: &String) -> Option<Vec<JsonApiStatusPlayer>> {
-        let permissions = &coord.settings.read().await.json_api.tokens[token];
+    pub async fn create(view: &LobbyView, token: &String) -> Option<Vec<JsonApiStatusPlayer>> {
+        let permissions = &view.get_lobby().settings.read().await.json_api.tokens[token];
 
         if !permissions.contains("Status/Players") {
             return None;
         }
 
         let mut players: Vec<JsonApiStatusPlayer> = Vec::new();
-        for (profile_id, cs) in &coord.players.clients {
+        for client_ref in view.get_lobby().players.iter() {
+            let profile_id = client_ref.key();
             let id = if !permissions.contains("Status/Players/ID") {
                 None
             } else {
                 Some(profile_id.to_string())
             };
 
-            let client = cs.data.read().await;
+            let client = client_ref.value();
             let name = if !permissions.contains("Status/Players/Name") {
                 None
             } else {
@@ -88,7 +90,7 @@ impl JsonApiStatusPlayer {
                         data: PacketData::Game { scenario_num, .. },
                         ..
                     }) => {
-                        if *scenario_num == -1i8 {
+                        if *scenario_num == -1 {
                             None
                         } else {
                             Some(*scenario_num)
@@ -113,16 +115,15 @@ impl JsonApiStatusPlayer {
             } else {
                 client.ipv4
             };
-            drop(client);
 
             let player = JsonApiStatusPlayer {
-                id: id,
-                name: name,
-                kingdom: kingdom,
-                stage: stage,
-                scenario: scenario,
-                costume: costume,
-                ipv4: ipv4,
+                id,
+                name,
+                kingdom,
+                stage,
+                scenario,
+                costume,
+                ipv4,
             };
             players.push(player);
         }
