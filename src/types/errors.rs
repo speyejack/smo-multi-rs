@@ -19,7 +19,7 @@ pub enum SMOError {
     InvalidID(Guid),
     #[error("Invalid username")]
     InvalidName(String),
-    #[error("Invalid console command argument")]
+    #[error("Invalid console command argument: {0}")]
     InvalidConsoleArg(String),
     #[error("Invalid encoding: {0}")]
     Encoding(#[from] EncodingError),
@@ -116,7 +116,6 @@ impl SMOError {
 }
 
 pub enum ErrorSeverity {
-    ServerFatal,
     ClientFatal,
     NonCritical,
 }

@@ -1346,6 +1346,7 @@ dependencies = [
  "dashmap",
  "futures",
  "hex",
+ "lazy_static",
  "nalgebra",
  "quickcheck",
  "serde",
