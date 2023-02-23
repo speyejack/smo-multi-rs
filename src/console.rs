@@ -45,25 +45,18 @@ impl Console {
 
             };
 
-            if let Err(e) = command_result {
-                println!("{}", e)
+            if let Err(e) = &command_result {
+                println!("{}", e);
+                continue;
+            }
+
+            let command_result = self.process_command(command_result.unwrap()).await;
+
+            match command_result {
+                Ok(s) => println!("{}", s),
+                Err(e) => println!("Error processing command: {}", e),
             }
         }
-    }
-
-    pub async fn request_comm(&self, command: ExternalCommand) -> Result<String> {
-        let (sender, recv) = oneshot::channel();
-
-        self.view
-            .get_lobby()
-            .to_coord
-            .send(Command::External(command, sender))
-            .await?;
-
-        let result_str = recv.await?;
-        let reply_str = result_str?;
-
-        Ok(reply_str)
     }
 
     pub async fn process_command(&mut self, cli: Cli) -> Result<String> {
@@ -406,10 +399,25 @@ impl Console {
             ConsoleCommand::Restart => {
                 self.view
                     .get_server_send()
-                    .send(ServerWideCommand::Shutdown);
+                    .send(ServerWideCommand::Shutdown)?;
                 "Restarting server".to_string()
             }
         };
+
+        Ok(reply_str)
+    }
+
+    pub async fn request_comm(&self, command: ExternalCommand) -> Result<String> {
+        let (sender, recv) = oneshot::channel();
+
+        self.view
+            .get_lobby()
+            .to_coord
+            .send(Command::External(command, sender))
+            .await?;
+
+        let result_str = recv.await?;
+        let reply_str = result_str?;
 
         Ok(reply_str)
     }
