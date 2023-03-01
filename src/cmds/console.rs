@@ -7,9 +7,13 @@ use clap::Subcommand;
 #[clap(rename_all = "lower")]
 pub enum ConsoleCommand {
     SendAll {
+        #[arg(short, long)]
+        force: bool,
         stage: String,
     },
     Send {
+        #[arg(short, long)]
+        force: bool,
         stage: String,
         id: String,
         scenario: i8,
@@ -35,7 +39,7 @@ pub enum ConsoleCommand {
     #[clap(subcommand)]
     Flip(FlipCommand),
     #[clap(subcommand)]
-    Shine(ShineCommand),
+    Shine(ShineArg),
     #[clap(subcommand)]
     Udp(UdpCommand),
     LoadSettings,
@@ -88,12 +92,12 @@ pub enum FlipCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 #[clap(rename_all = "lower")]
-pub enum ShineCommand {
+pub enum ShineArg {
     List,
     Clear,
     Sync,
     Send {
-        id: u32,
+        id: i32,
         player: SinglePlayerSelect,
     },
     Set {
