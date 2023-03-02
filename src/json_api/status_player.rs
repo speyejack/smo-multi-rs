@@ -26,7 +26,7 @@ pub(in crate::json_api) struct JsonApiStatusPlayer {
     scenario: Option<i8>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    location: Option<Vector3>,
+    position: Option<Vector3>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     costume: Option<JsonApiStatusPlayerCostume>,
@@ -114,7 +114,7 @@ impl JsonApiStatusPlayer {
                     _ => None,
                 }
             };
-            let location = if !permissions.contains("Status/Players/Location") {
+            let position = if !permissions.contains("Status/Players/Position") {
                 None
             } else {
                 Some(client.last_position)
@@ -131,7 +131,7 @@ impl JsonApiStatusPlayer {
                 kingdom,
                 stage,
                 scenario,
-                location,
+                position,
                 costume,
                 ipv4,
             };
