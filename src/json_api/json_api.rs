@@ -127,7 +127,7 @@ impl JsonApi {
         // TODO Repeat write until all bytes are sent
         let _ = socket.write(&response_str.as_bytes()).await?;
         socket.flush().await?;
-        tracing::debug!("response: {}", response_str);
+        tracing::trace!("response: {}", response_str);
         Ok(())
     }
 }
