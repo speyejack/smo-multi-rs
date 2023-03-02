@@ -65,7 +65,7 @@ impl JsonApiStatusPlayer {
                     Some(Packet {
                         data: PacketData::Game { stage, .. },
                         ..
-                    }) => Stages::stage2kingdom(&stage),
+                    }) => Stages::stage2kingdom(stage),
                     _ => None,
                 }
             };
@@ -77,7 +77,7 @@ impl JsonApiStatusPlayer {
                         data: PacketData::Game { stage, .. },
                         ..
                     }) => {
-                        if stage == "" {
+                        if stage.is_empty() {
                             None
                         } else {
                             Some(stage.to_string())
