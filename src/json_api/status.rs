@@ -18,8 +18,8 @@ pub(in crate::json_api) struct JsonApiStatus {
 impl JsonApiStatus {
     pub async fn create(view: &LobbyView, token: &String) -> JsonApiStatus {
         JsonApiStatus {
-            players: JsonApiStatusPlayer::create(view, &token).await,
-            settings: JsonApiStatusSettings::create(view, &token).await,
+            players: JsonApiStatusPlayer::create(view, token).await,
+            settings: JsonApiStatusSettings::create(view, token).await,
         }
     }
 }

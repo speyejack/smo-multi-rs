@@ -46,33 +46,30 @@ impl JsonApiStatusPlayer {
         let mut players: Vec<JsonApiStatusPlayer> = Vec::new();
         for client_ref in view.get_lobby().players.iter() {
             let profile_id = client_ref.key();
-            let id = if !permissions.contains("Status/Players/ID") {
-                None
-            } else {
-                Some(profile_id.to_string())
-            };
+
+            let id = permissions
+                .contains("Status/Players/ID")
+                .then(|| profile_id.to_string());
 
             let client = client_ref.value();
-            let name = if !permissions.contains("Status/Players/Name") {
-                None
-            } else {
-                Some(client.name.to_string())
-            };
-            let kingdom = if !permissions.contains("Status/Players/Kingdom") {
-                None
-            } else {
-                match &client.last_game_packet {
+            let name = permissions
+                .contains("Status/Players/Name")
+                .then(|| client.name.to_string());
+
+            let kingdom = permissions
+                .contains("Status/Players/Kingdom")
+                .then(|| match &client.last_game_packet {
                     Some(Packet {
                         data: PacketData::Game { stage, .. },
                         ..
                     }) => Stages::stage2kingdom(stage),
                     _ => None,
-                }
-            };
-            let stage = if !permissions.contains("Status/Players/Stage") {
-                None
-            } else {
-                match &client.last_game_packet {
+                })
+                .flatten();
+
+            let stage = permissions
+                .contains("Status/Players/Stage")
+                .then(|| match &client.last_game_packet {
                     Some(Packet {
                         data: PacketData::Game { stage, .. },
                         ..
@@ -84,46 +81,37 @@ impl JsonApiStatusPlayer {
                         }
                     }
                     _ => None,
-                }
-            };
-            let scenario = if !permissions.contains("Status/Players/Scenario") {
-                None
-            } else {
-                match &client.last_game_packet {
+                })
+                .flatten();
+
+            let scenario = permissions
+                .contains("Status/Players/Scenario")
+                .then(|| match &client.last_game_packet {
                     Some(Packet {
                         data: PacketData::Game { scenario_num, .. },
                         ..
-                    }) => {
-                        if *scenario_num == -1 {
-                            None
-                        } else {
-                            Some(*scenario_num)
-                        }
-                    }
+                    }) => (*scenario_num != -1).then_some(*scenario_num),
                     _ => None,
-                }
-            };
-            let costume = if !permissions.contains("Status/Players/Costume") {
-                None
-            } else {
-                match &client.costume {
-                    Some(cost) => Some(JsonApiStatusPlayerCostume {
-                        body: cost.body_name.to_string(),
-                        cap: cost.cap_name.to_string(),
-                    }),
-                    _ => None,
-                }
-            };
-            let position = if !permissions.contains("Status/Players/Position") {
-                None
-            } else {
-                Some(client.last_position)
-            };
-            let ipv4 = if !permissions.contains("Status/Players/IPv4") {
-                None
-            } else {
-                client.ipv4
-            };
+                })
+                .flatten();
+
+            let costume = permissions
+                .contains("Status/Players/Costume")
+                .then_some(())
+                .and(client.costume.as_ref())
+                .map(|cost| JsonApiStatusPlayerCostume {
+                    body: cost.body_name.to_string(),
+                    cap: cost.cap_name.to_string(),
+                });
+
+            let position = permissions
+                .contains("Status/Players/Position")
+                .then_some(client.last_position);
+
+            let ipv4 = permissions
+                .contains("Status/Players/IPv4")
+                .then_some(client.ipv4)
+                .flatten();
 
             let player = JsonApiStatusPlayer {
                 id,
