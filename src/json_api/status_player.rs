@@ -29,6 +29,9 @@ pub(in crate::json_api) struct JsonApiStatusPlayer {
     position: Option<Vector3>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    tagged: Option<bool>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     costume: Option<JsonApiStatusPlayerCostume>,
 
     #[serde(skip_serializing_if = "Option::is_none", rename = "IPv4")]
@@ -113,6 +116,10 @@ impl JsonApiStatusPlayer {
                 .then_some(client.ipv4)
                 .flatten();
 
+            let tagged = permissions
+                .contains("Status/Players/Tagged")
+                .then_some(client.is_seeking);
+
             let player = JsonApiStatusPlayer {
                 id,
                 name,
@@ -121,6 +128,7 @@ impl JsonApiStatusPlayer {
                 scenario,
                 position,
                 costume,
+                tagged,
                 ipv4,
             };
             players.push(player);
