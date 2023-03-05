@@ -46,21 +46,26 @@ impl JsonApiStatusPlayer {
             return None;
         }
 
+        let id_perm = permissions.contains("Status/Players/ID");
+        let name_perm = permissions.contains("Status/Players/Name");
+        let kingdom_per = permissions.contains("Status/Players/Kingdom");
+        let stage_perm = permissions.contains("Status/Players/Stage");
+        let scenario_perm = permissions.contains("Status/Players/Scenario");
+        let costume_perm = permissions.contains("Status/Players/Costume");
+        let position_perm = permissions.contains("Status/Players/Position");
+        let ipv4_perm = permissions.contains("Status/Players/IPv4");
+        let tagged_perm = permissions.contains("Status/Players/Tagged");
+
         let mut players: Vec<JsonApiStatusPlayer> = Vec::new();
         for client_ref in view.get_lobby().players.iter() {
             let profile_id = client_ref.key();
 
-            let id = permissions
-                .contains("Status/Players/ID")
-                .then(|| profile_id.to_string());
+            let id = id_perm.then(|| profile_id.to_string());
 
             let client = client_ref.value();
-            let name = permissions
-                .contains("Status/Players/Name")
-                .then(|| client.name.to_string());
+            let name = name_perm.then(|| client.name.to_string());
 
-            let kingdom = permissions
-                .contains("Status/Players/Kingdom")
+            let kingdom = kingdom_per
                 .then(|| match &client.last_game_packet {
                     Some(Packet {
                         data: PacketData::Game { stage, .. },
@@ -70,8 +75,7 @@ impl JsonApiStatusPlayer {
                 })
                 .flatten();
 
-            let stage = permissions
-                .contains("Status/Players/Stage")
+            let stage = stage_perm
                 .then(|| match &client.last_game_packet {
                     Some(Packet {
                         data: PacketData::Game { stage, .. },
@@ -87,8 +91,7 @@ impl JsonApiStatusPlayer {
                 })
                 .flatten();
 
-            let scenario = permissions
-                .contains("Status/Players/Scenario")
+            let scenario = scenario_perm
                 .then(|| match &client.last_game_packet {
                     Some(Packet {
                         data: PacketData::Game { scenario_num, .. },
@@ -98,8 +101,7 @@ impl JsonApiStatusPlayer {
                 })
                 .flatten();
 
-            let costume = permissions
-                .contains("Status/Players/Costume")
+            let costume = costume_perm
                 .then_some(())
                 .and(client.costume.as_ref())
                 .map(|cost| JsonApiStatusPlayerCostume {
@@ -107,18 +109,11 @@ impl JsonApiStatusPlayer {
                     cap: cost.cap_name.to_string(),
                 });
 
-            let position = permissions
-                .contains("Status/Players/Position")
-                .then_some(client.last_position);
+            let position = position_perm.then_some(client.last_position);
 
-            let ipv4 = permissions
-                .contains("Status/Players/IPv4")
-                .then_some(client.ipv4)
-                .flatten();
+            let ipv4 = ipv4_perm.then_some(client.ipv4).flatten();
 
-            let tagged = permissions
-                .contains("Status/Players/Tagged")
-                .then_some(client.is_seeking);
+            let tagged = tagged_perm.then_some(client.is_seeking);
 
             let player = JsonApiStatusPlayer {
                 id,
