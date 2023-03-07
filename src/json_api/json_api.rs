@@ -123,9 +123,9 @@ impl JsonApi {
         JsonApi::respond(&mut socket, response.to_string()).await
     }
 
-    async fn respond(mut socket: &mut BufWriter<TcpStream>, response_str: String) -> Result<()> {
+    async fn respond(socket: &mut BufWriter<TcpStream>, response_str: String) -> Result<()> {
         // TODO Repeat write until all bytes are sent
-        let _ = socket.write(&response_str.as_bytes()).await?;
+        let _ = socket.write(response_str.as_bytes()).await?;
         socket.flush().await?;
         tracing::trace!("response: {}", response_str);
         Ok(())
