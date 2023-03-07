@@ -104,7 +104,6 @@ impl MockClient {
                 continue;
             }
 
-            tracing::debug!("Packet before manip: {:?}", packet);
             match packet.data {
                 PacketData::Player { ref mut pos, .. } | PacketData::Cap { ref mut pos, .. } => {
                     pos.y += 200.0;
@@ -116,8 +115,6 @@ impl MockClient {
                 PacketData::UdpInit { port } => self.udp.set_client_port(port),
                 _ => continue,
             }
-
-            tracing::debug!("Replaying packet: {:?}", packet);
 
             let new_packet = Packet::new(self.guid, packet.data);
             self.send_packet(&new_packet).await;
