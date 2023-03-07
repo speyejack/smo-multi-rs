@@ -215,7 +215,8 @@ impl Coordinator {
                             seconds: 0,
                         };
                         let packet = Packet::new(Guid::default(), tag_packet);
-                        self.send_players(&players, &ClientCommand::SelfAddressed(packet));
+                        self.send_players(&players, &ClientCommand::SelfAddressed(packet))
+                            .await;
                     }
                     "Updated tag status".to_string()
                 }
