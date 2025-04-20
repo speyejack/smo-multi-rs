@@ -74,6 +74,8 @@ pub enum ChannelError {
 
 #[derive(Error, Debug)]
 pub enum EncodingError {
+    #[error("Invalid Packet Size")]
+    InvalidSize,
     #[error("Not enough data")]
     NotEnoughData,
     #[error("Invalid string data")]
@@ -109,6 +111,7 @@ impl SMOError {
         match self {
             Self::Encoding(EncodingError::ConnectionClose)
             | Self::Encoding(EncodingError::ConnectionReset)
+            | Self::Encoding(EncodingError::InvalidSize)
             | Self::Channel(_) => ErrorSeverity::ClientFatal,
             _ => ErrorSeverity::NonCritical,
         }

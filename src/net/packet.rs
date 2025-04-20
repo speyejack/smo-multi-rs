@@ -302,7 +302,9 @@ where
             },
         };
 
-        let excess_padding = p_size as usize - data.get_size();
+        let excess_padding = (p_size as usize).checked_sub(data.get_size());
+        let excess_padding = excess_padding.ok_or(EncodingError::InvalidSize)?;
+
         if excess_padding > 0 {
             buf.advance(excess_padding);
         }
