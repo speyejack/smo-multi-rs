@@ -17,7 +17,7 @@ use crate::types::Result;
 
 use server::Server;
 use settings::{load_settings, save_settings};
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::filter::{EnvFilter, LevelFilter};
 use types::SMOError;
 
 #[tokio::main]
@@ -40,7 +40,7 @@ fn setup_env() {
     }));
 
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(EnvFilter::builder().with_default_directive(LevelFilter::INFO.into()).from_env_lossy())
         .init();
 }
 

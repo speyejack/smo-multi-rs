@@ -1,11 +1,9 @@
 use serde::Serialize;
 use std::net::IpAddr;
 
-use crate::coordinator::Coordinator;
 use crate::lobby::LobbyView;
-use crate::net::{Packet, PacketData};
+use crate::net::{GameMode, Packet, PacketData};
 use crate::stages::Stages;
-use crate::types::Vector3;
 
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -17,6 +15,9 @@ pub(in crate::json_api) struct JsonApiStatusPlayer {
     name: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    game_mode: Option<i8>, // display u4 (0..15) as (-1..14)
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     kingdom: Option<String>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -26,13 +27,22 @@ pub(in crate::json_api) struct JsonApiStatusPlayer {
     scenario: Option<i8>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
-    position: Option<Vector3>,
+    position: Option<JsonApiStatusPlayerPosition>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rotation: Option<JsonApiStatusPlayerRotation>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     tagged: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none")]
     costume: Option<JsonApiStatusPlayerCostume>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "Is2D")]
+    is_2d: Option<bool>,
 
     #[serde(skip_serializing_if = "Option::is_none", rename = "IPv4")]
     ipv4: Option<IpAddr>,
@@ -46,15 +56,19 @@ impl JsonApiStatusPlayer {
             return None;
         }
 
-        let id_perm = permissions.contains("Status/Players/ID");
-        let name_perm = permissions.contains("Status/Players/Name");
-        let kingdom_per = permissions.contains("Status/Players/Kingdom");
-        let stage_perm = permissions.contains("Status/Players/Stage");
+        let id_perm       = permissions.contains("Status/Players/ID");
+        let name_perm     = permissions.contains("Status/Players/Name");
+        let gamemode_perm = permissions.contains("Status/Players/GameMode");
+        let kingdom_perm  = permissions.contains("Status/Players/Kingdom");
+        let stage_perm    = permissions.contains("Status/Players/Stage");
         let scenario_perm = permissions.contains("Status/Players/Scenario");
-        let costume_perm = permissions.contains("Status/Players/Costume");
+        let costume_perm  = permissions.contains("Status/Players/Costume");
+        let capture_perm  = permissions.contains("Status/Players/Capture");
         let position_perm = permissions.contains("Status/Players/Position");
-        let ipv4_perm = permissions.contains("Status/Players/IPv4");
-        let tagged_perm = permissions.contains("Status/Players/Tagged");
+        let rotation_perm = permissions.contains("Status/Players/Rotation");
+        let is2d_perm     = permissions.contains("Status/Players/Is2D");
+        let ipv4_perm     = permissions.contains("Status/Players/IPv4");
+        let tagged_perm   = permissions.contains("Status/Players/Tagged");
 
         let mut players: Vec<JsonApiStatusPlayer> = Vec::new();
         for client_ref in view.get_lobby().players.iter() {
@@ -64,8 +78,9 @@ impl JsonApiStatusPlayer {
 
             let client = client_ref.value();
             let name = name_perm.then(|| client.name.to_string());
+            let game_mode = gamemode_perm.then(|| ((GameMode::to_u8(client.game_mode) + 1) % 16) as i8 - 1);
 
-            let kingdom = kingdom_per
+            let kingdom = kingdom_perm
                 .then(|| match &client.last_game_packet {
                     Some(Packet {
                         data: PacketData::Game { stage, .. },
@@ -102,27 +117,83 @@ impl JsonApiStatusPlayer {
                 .flatten();
 
             let costume = costume_perm
-                .then_some(())
-                .and(client.costume.as_ref())
-                .map(|cost| JsonApiStatusPlayerCostume {
-                    body: cost.body_name.to_string(),
-                    cap: cost.cap_name.to_string(),
-                });
+                .then(|| match &client.last_costume_packet {
+                    Some(Packet {
+                        data: PacketData::Costume(cost),
+                        ..
+                    }) => Some(JsonApiStatusPlayerCostume {
+                        body: cost.body_name.to_string(),
+                        cap: cost.cap_name.to_string(),
+                    }),
+                    _ => None,
+                })
+                .flatten();
 
-            let position = position_perm.then_some(client.last_position);
+            let capture = capture_perm
+                .then(|| match &client.last_capture_packet {
+                    Some(Packet {
+                        data: PacketData::Capture { model },
+                        ..
+                    }) => Some(model.to_string()),
+                    _ => None,
+                })
+                .flatten();
+
+            let position = position_perm
+                .then(|| match &client.last_player_packet {
+                    Some(Packet {
+                        data: PacketData::Player { pos, .. },
+                        ..
+                    }) => Some(JsonApiStatusPlayerPosition {
+                        x: pos.x,
+                        y: pos.y,
+                        z: pos.z,
+                    }),
+                    _ => None,
+                })
+                .flatten();
+
+            let rotation = rotation_perm
+                .then(|| match &client.last_player_packet {
+                    Some(Packet {
+                        data: PacketData::Player { rot, .. },
+                        ..
+                    }) => Some(JsonApiStatusPlayerRotation {
+                        w: rot.w,
+                        x: rot.i,
+                        y: rot.j,
+                        z: rot.k,
+                    }),
+                    _ => None,
+                })
+                .flatten();
+
+            let is_2d = is2d_perm
+                .then(|| match &client.last_game_packet {
+                    Some(Packet {
+                        data: PacketData::Game { is_2d, .. },
+                        ..
+                    }) => Some(*is_2d),
+                    _ => None,
+                })
+                .flatten();
 
             let ipv4 = ipv4_perm.then_some(client.ipv4).flatten();
 
-            let tagged = tagged_perm.then_some(client.is_seeking);
+            let tagged = tagged_perm.then_some(client.is_seeking).flatten();
 
             let player = JsonApiStatusPlayer {
                 id,
                 name,
+                game_mode,
                 kingdom,
                 stage,
                 scenario,
                 position,
+                rotation,
                 costume,
+                capture,
+                is_2d,
                 tagged,
                 ipv4,
             };
@@ -137,4 +208,21 @@ impl JsonApiStatusPlayer {
 struct JsonApiStatusPlayerCostume {
     body: String,
     cap: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct JsonApiStatusPlayerPosition {
+    x: f32,
+    y: f32,
+    z: f32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "PascalCase")]
+struct JsonApiStatusPlayerRotation {
+    w: f32,
+    x: f32,
+    y: f32,
+    z: f32,
 }

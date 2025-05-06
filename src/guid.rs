@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::EncodingError;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Eq, Hash, Copy, Default)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Hash, Clone, Copy, Default)]
 #[serde(into = "String", try_from = "String")]
 pub struct Guid {
     pub id: [u8; 16],

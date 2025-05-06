@@ -1,6 +1,7 @@
 use crate::{
     cmds::{ClientCommand, ServerWideCommand},
     lobby::Lobby,
+    net::connection::Connection,
     types::Result,
 };
 use std::net::SocketAddr;
@@ -57,12 +58,19 @@ impl Listener {
                 let banned_ips = &settings.ban_list.ip_addresses;
 
                 if banned_ips.contains(&addr.ip()) {
-                    tracing::warn!("Banned ip tried to connect: {}", addr.ip());
+                    tracing::warn!("Banned ip tried to connect: {}", addr.to_string());
+                    tokio::spawn(async move {
+                        Client::ignore_client(Connection::new(socket), addr.to_string()).await
+                    });
                     continue;
                 }
 
                 if settings.server.max_players as usize <= self.lobby.players.len() {
-                    tracing::warn!("Connection attempt with too many players");
+                    tracing::warn!("Connection attempt with too many players from {}", addr.to_string());
+                    tokio::spawn(async move {
+                        Client::ignore_client(Connection::new(socket), addr.to_string()).await
+                    });
+                    continue;
                 }
             }
 
@@ -76,8 +84,7 @@ impl Listener {
 
             let lobby = self.lobby.clone();
             tokio::spawn(async move {
-                let cli_result =
-                    Client::initialize_client(socket, to_coord, broadcast, udp_port, lobby).await;
+                let cli_result = Client::initialize_client(socket, to_coord, broadcast, udp_port, lobby).await;
 
                 if let Err(e) = cli_result {
                     tracing::warn!("Client failed to begin: {}", e)

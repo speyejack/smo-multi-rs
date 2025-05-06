@@ -1,0 +1,57 @@
+name: Build binary files
+
+on:
+  push:
+    branches:
+    - '**'
+    tags:
+    - '*.*.*'
+    - 'v*.*.*'
+    pull_request:
+    - '**'
+  workflow_dispatch: # or manual
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - arch     : x64
+          filename : Server
+        - arch     : arm64
+          filename : Server.arm64
+        - arch     : win64
+          filename : Server.exe
+    runs-on: ubuntu-latest
+    steps:
+    -
+      name: Checkout
+      uses: actions/checkout@v4
+    -
+      name: Cache
+      uses: actions/cache@v4
+      continue-on-error: false
+      with:
+        key: ${{ matrix.arch }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        path: |
+          target/
+    -
+      name: Build binary for ${{ matrix.arch }}
+      run: |
+        ./docker-build.sh  ${{ matrix.arch }}
+    -
+      name: Fix permissions
+      run: |
+        sudo chown -R $(whoami): ./bin/ ./target/
+    -
+      name : Upload binary
+      uses : actions/upload-artifact@v4
+      with:
+        name              : ${{ matrix.filename }}
+        path              : ./bin/${{ matrix.filename }}
+        if-no-files-found : error

@@ -5,8 +5,6 @@ To use the API the client sends only one texual JSON object to the server and mi
 The first 20 bytes of the request JSON are constant `{"API_JSON_REQUEST":`,
 to fill up and exactly match a complete normal game packet header (to identify and separate it from other server traffic).
 
-The first 22 bytes of binary data returned from the server (`InitPacket`) need to be ignored to parse the rest as valid JSON.
-
 ---
 
 Every request to the server needs to be authorized by containing a secret token.
@@ -33,7 +31,12 @@ The possible player status permissions are hardcoded though:
 - `Status/Players/Kingdom`
 - `Status/Players/Stage`
 - `Status/Players/Scenario`
+- `Status/Players/Position`
+- `Status/Players/Rotation`
+- `Status/Players/Tagged`
 - `Status/Players/Costume`
+- `Status/Players/Capture`
+- `Status/Players/Is2D`
 - `Status/Players/IPv4`
 
 ---
@@ -69,10 +72,9 @@ Example request (e.g. with `./test.sh Command sendall mush`):
 
 Example `hexdump -C` response:
 ```
-00000000  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  |................|
-00000010  01 00 02 00 04 00 7b 22  4f 75 74 70 75 74 22 3a  |......{"Output":|
-00000020  5b 22 53 65 6e 74 20 70  6c 61 79 65 72 73 20 74  |["Sent players t|
-00000030  6f 20 50 65 61 63 68 57  6f 72 6c 64 48 6f 6d 65  |o PeachWorldHome|
-00000040  53 74 61 67 65 3a 2d 31  22 5d 7d                 |Stage:-1"]}|
-0000004b
+00000000  7b 22 4f 75 74 70 75 74  22 3a 5b 22 53 65 6e 74  |{"Output":["Sent|
+00000010  20 70 6c 61 79 65 72 73  20 74 6f 20 50 65 61 63  | players to Peac|
+00000020  68 57 6f 72 6c 64 48 6f  6d 65 53 74 61 67 65 3a  |hWorldHomeStage:|
+00000030  2d 31 22 5d 7d                                    |-1"]}|
+00000035
 ```

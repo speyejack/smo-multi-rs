@@ -91,5 +91,12 @@ impl PlayerSelect<String> {
     }
 }
 
+
+impl From<Vec<Guid>> for PlayerSelect<Guid> {
+    fn from(guids: Vec<Guid>) -> Self {
+        PlayerSelect::SelectPlayers(guids)
+    }
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct NameMap(pub Arc<RwLock<BiMap<Guid, String>>>);

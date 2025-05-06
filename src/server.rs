@@ -89,7 +89,7 @@ impl Server {
         let coord_task = tokio::task::spawn(self.coord.handle_commands());
         let parser_task = tokio::task::spawn(console.loop_read_commands());
         if let Some(api) = json_api {
-            let api_task = tokio::task::spawn(api.loop_events());
+            let _api_task = tokio::task::spawn(api.loop_events());
         }
 
         let _results = tokio::join!(serv_task, coord_task, parser_task);

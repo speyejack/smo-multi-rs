@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     fmt::Display,
     fs::File,
     io::{BufReader, BufWriter},
@@ -45,7 +45,7 @@ pub struct ServerSettings {
 #[serde(rename_all = "PascalCase")]
 pub struct FlipSettings {
     pub enabled: bool,
-    pub players: HashSet<Guid>,
+    pub players: BTreeSet<Guid>,
     pub pov: FlipPovSettings,
 }
 
@@ -111,8 +111,10 @@ pub struct ScenarioSettings {
 #[serde(rename_all = "PascalCase")]
 pub struct BanListSettings {
     pub enabled: bool,
-    pub players: HashSet<Guid>,
-    pub ip_addresses: HashSet<IpAddr>,
+    pub players: BTreeSet<Guid>,
+    pub ip_addresses: BTreeSet<IpAddr>,
+    pub stages: BTreeSet<String>,
+    pub game_modes: BTreeSet<i8>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -127,6 +129,8 @@ pub struct DiscordSettings {
 #[serde(rename_all = "PascalCase")]
 pub struct ShineTable {
     pub enabled: bool,
+    pub excluded: BTreeSet<i32>,
+    pub clear_on_new_saves: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -147,9 +151,9 @@ pub struct Udp {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct JsonApiSettings {
-    pub port: u16,
     pub enabled: bool,
-    pub tokens: HashMap<String, HashSet<String>>,
+    pub port: u16,
+    pub tokens: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Default for ServerSettings {
@@ -186,6 +190,8 @@ impl Default for BanListSettings {
             enabled: false,
             players: Default::default(),
             ip_addresses: Default::default(),
+            stages: Default::default(),
+            game_modes: Default::default(),
         }
     }
 }
@@ -211,7 +217,11 @@ impl Default for PersistShine {
 
 impl Default for ShineTable {
     fn default() -> Self {
-        Self { enabled: true }
+        Self {
+          enabled: true,
+          excluded: BTreeSet::from([ 496 ]),
+          clear_on_new_saves: false,
+        }
     }
 }
 
@@ -251,8 +261,8 @@ pub fn save_settings(settings: &Settings) -> Result<()> {
 impl Default for JsonApiSettings {
     fn default() -> Self {
         Self {
-            port: 1030,
             enabled: false,
+            port: 1027,
             tokens: Default::default(),
         }
     }

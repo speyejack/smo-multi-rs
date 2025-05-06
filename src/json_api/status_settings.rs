@@ -1,6 +1,6 @@
 use serde_json::{json, Map, Value};
 
-use crate::{coordinator::Coordinator, lobby::LobbyView};
+use crate::lobby::LobbyView;
 
 pub(in crate::json_api) struct JsonApiStatusSettings {}
 

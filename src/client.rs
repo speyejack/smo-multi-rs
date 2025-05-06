@@ -1,15 +1,16 @@
 use crate::{
     cmds::{ClientCommand, Command, ServerCommand},
     guid::Guid,
-    lobby::Lobby,
-    net::{connection::Connection, udp_conn::UdpConnection, ConnectionType, Packet, PacketData},
+    json_api::JsonApi,
+    lobby::{Lobby, LobbyView},
+    net::{connection::Connection, udp_conn::UdpConnection, ConnectionType, GameMode, Packet, PacketData, TagUpdate},
     player_holder::ClientChannel,
-    types::{ChannelError, ClientInitError, Costume, ErrorSeverity, Result, SMOError, Vector3},
+    types::{ChannelError, ClientInitError, ErrorSeverity, Result, SMOError, Vector3},
 };
 use dashmap::mapref::one::{Ref, RefMut};
 use nalgebra::UnitQuaternion;
 use std::{
-    collections::{hash_map::RandomState, HashSet},
+    collections::{hash_map::RandomState, BTreeSet},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::Duration,
 };
@@ -40,16 +41,18 @@ pub struct Client {
 pub struct PlayerData {
     pub ipv4: Option<IpAddr>,
     pub name: String,
-    pub shine_sync: HashSet<i32>,
+    pub game_mode: GameMode,
+    pub shine_sync: BTreeSet<i32>,
     pub scenario: i8,
     pub is_2d: bool,
-    pub is_seeking: bool,
+    pub is_seeking: Option<bool>,
+    pub last_capture_packet: Option<Packet>,
+    pub last_costume_packet: Option<Packet>,
     pub last_game_packet: Option<Packet>,
-    pub last_position: Vector3,
-    pub speedrun_start: bool,
+    pub last_player_packet: Option<Packet>,
+    pub disable_shine_sync: bool,
     pub loaded_save: bool,
-    pub time: Duration,
-    pub costume: Option<Costume>,
+    pub time: Option<Duration>,
     pub channel: ClientChannel,
 }
 
@@ -58,18 +61,46 @@ impl PlayerData {
         Self {
             ipv4: Default::default(),
             name: Default::default(),
+            game_mode: GameMode::None,
             shine_sync: Default::default(),
             scenario: Default::default(),
             is_2d: Default::default(),
             is_seeking: Default::default(),
-            last_position: Default::default(),
+            last_capture_packet: Default::default(),
+            last_costume_packet: Default::default(),
             last_game_packet: Default::default(),
-            speedrun_start: Default::default(),
+            last_player_packet: Default::default(),
+            disable_shine_sync: Default::default(),
             loaded_save: Default::default(),
             time: Default::default(),
-            costume: Default::default(),
             channel,
         }
+    }
+
+    pub fn create_tag_packet(&self, guid: Guid) -> Option<Packet> {
+        let update_type = match (self.time, self.is_seeking) {
+            (Some(_), Some(_)) => TagUpdate::Both,
+            (Some(_), None)    => TagUpdate::Time,
+            (None, Some(_))    => TagUpdate::State,
+            (None, None)       => TagUpdate::Unknown,
+        };
+        if update_type == TagUpdate::Unknown {
+            return None
+        }
+        let seconds = match self.time {
+          Some(duration) => duration.as_secs(),
+          None           => 0,
+        };
+        Some(Packet::new(
+            guid,
+            PacketData::Tag {
+                game_mode: GameMode::Legacy,
+                update_type,
+                is_it   : self.is_seeking.unwrap_or(false),
+                seconds : u8::try_from(seconds % 60).unwrap_or(59),
+                minutes : u16::try_from(seconds / 60).unwrap_or(u16::MAX),
+            },
+        ))
     }
 }
 
@@ -161,10 +192,6 @@ impl Client {
                 ref mut pos,
                 ..
             } => {
-                let mut data = self.lobby.get_mut_client(&self.guid)?;
-                *data.last_position = **pos;
-                drop(data);
-
                 let settings = self.lobby.settings.read().await;
                 if settings.flip.enabled
                     && settings.flip.pov.is_others_flip()
@@ -176,12 +203,25 @@ impl Client {
                     *pos += get_mario_size(data.is_2d) * Vector3::y();
                     *rot *= rot_quad;
                 }
+                drop(settings);
+
+                let mut data = self.lobby.get_mut_client(&self.guid)?;
+                data.last_player_packet = Some(packet.clone());
+                drop(data);
+
                 PacketDestination::Coordinator
             }
-            PacketData::Costume(costume) => {
+            PacketData::Capture { .. } => {
                 let mut data = self.get_player_mut();
-                data.costume = Some(costume.clone());
+                data.last_capture_packet = Some(packet.clone());
+                drop(data);
+                PacketDestination::Broadcast
+            }
+            PacketData::Costume { .. } => {
+                let mut data = self.get_player_mut();
                 data.loaded_save = true;
+                data.last_costume_packet = Some(packet.clone());
+                drop(data);
                 PacketDestination::Coordinator
             }
             PacketData::Game {
@@ -192,15 +232,18 @@ impl Client {
                 let mut data = self.get_player_mut();
                 data.is_2d = *is_2d;
                 data.scenario = *scenario_num;
-                if stage == "CapWorldHomeStage" && *scenario_num == 0 {
-                    data.speedrun_start = true;
-                    data.shine_sync.clear();
+                // reset last_player_packet on stage changes
+                if let Some(Packet { data: PacketData::Game { stage: last_stage, .. }, .. }) = &data.last_game_packet {
+                    if *stage != *last_stage {
+                        data.last_player_packet = None;
+                    }
                 }
-                let new_packet = packet.clone();
-                data.last_game_packet = Some(new_packet);
+                data.last_game_packet = Some(packet.clone());
+                drop(data);
                 PacketDestination::Coordinator
             }
             PacketData::Tag {
+                game_mode,
                 update_type,
                 is_it,
                 seconds,
@@ -209,19 +252,38 @@ impl Client {
                 let mut data = self.get_player_mut();
                 match update_type {
                     crate::net::TagUpdate::Time => {
-                        data.time = Duration::from_secs(*seconds as u64 + *minutes as u64 * 60);
+                        data.time = Some(Duration::from_secs(*seconds as u64 + *minutes as u64 * 60));
                     }
                     crate::net::TagUpdate::State => {
-                        data.is_seeking = *is_it;
+                        data.is_seeking = Some(*is_it);
                     }
+                    crate::net::TagUpdate::Both => {
+                        data.time       = Some(Duration::from_secs(*seconds as u64 + *minutes as u64 * 60));
+                        data.is_seeking = Some(*is_it);
+                    }
+                    _ => {}
                 }
-                PacketDestination::Broadcast
+                data.game_mode = *game_mode;
+                drop(data);
+                PacketDestination::Coordinator
+            }
+            PacketData::GameMode {
+                game_mode,
+                ..
+            } => {
+                let mut data = self.get_player_mut();
+                data.time       = None;
+                data.is_seeking = None;
+                data.game_mode  = *game_mode;
+                drop(data);
+                PacketDestination::Coordinator
             }
             PacketData::Shine { shine_id, .. } => {
                 let mut data = self.get_player_mut();
                 if data.loaded_save {
                     data.shine_sync.insert(*shine_id);
                 }
+                drop(data);
                 PacketDestination::Coordinator
             }
             PacketData::UdpInit { port } => {
@@ -367,15 +429,9 @@ impl Client {
         let start_udp_handshake = l_set.udp.initiate_handshake;
         drop(l_set);
 
-        tracing::debug!("Initializing connection");
         let mut conn = Connection::new(socket);
-        conn.write_packet(&Packet::new(
-            Guid::default(),
-            PacketData::Init { max_players },
-        ))
-        .await?;
 
-        tracing::debug!("Waiting for reply");
+        tracing::debug!("Waiting for client init");
         let connect = conn.read_packet().await?;
 
         let new_player = match connect.data {
@@ -386,9 +442,21 @@ impl Client {
             } => {
                 let settings = lobby.settings.read().await;
                 if settings.ban_list.players.contains(&connect.id) {
+                    let identifier = format!("{} ({}/{})", tcp_sock_addr.to_string(), name, connect.id);
+                    tracing::warn!("Banned profile tried to connect: {}", identifier);
+                    tracing::info!("Ignoring player {}", identifier);
+                    Self::ignore_client(conn, identifier).await?;
                     return Err(SMOError::ClientInit(ClientInitError::BannedID));
                 }
                 drop(settings);
+
+                // send server init
+                tracing::debug!("Send server init");
+                conn.write_packet(&Packet::new(
+                    Guid::default(),
+                    PacketData::Init { max_players },
+                ))
+                .await?;
 
                 match c_type {
                     ConnectionType::FirstConnection => {
@@ -402,6 +470,10 @@ impl Client {
                     ConnectionType::Reconnecting => {}
                 }
 
+                // TODO: in case of a reconnect, we need to partially keep the
+                // old player data and not create a completely new object.
+                // Because older versions of the mod (below 1.3.0) did not send
+                // all important packets again after a reconnect.
                 let data = PlayerData {
                     name: name.clone(),
                     ipv4: Some(conn.addr.ip()),
@@ -447,17 +519,66 @@ impl Client {
 
                 tracing::debug!("Initialized player");
 
-                Ok(Command::Server(ServerCommand::NewPlayer {
+                Ok(Some(Command::Server(ServerCommand::NewPlayer {
                     cli: client,
                     data,
                     connect_packet: Box::new(connect),
                     comm: to_cli,
-                }))
+                })))
+            }
+            PacketData::JsonApi { json } => {
+                JsonApi::handle(LobbyView::new(&lobby), conn.socket, conn.addr, json, false).await?;
+                Ok(None)
             }
             _ => Err(SMOError::ClientInit(ClientInitError::BadHandshake)),
         }?;
 
-        to_coord.send(new_player).await?;
+        if let Some(player) = new_player {
+            to_coord.send(player).await?;
+        }
+        Ok(())
+    }
+
+    pub async fn ignore_client(mut conn: Connection, mut identifier: String) -> Result<()> {
+        // send server init (required to crash ignored players later)
+        conn.write_packet(&Packet::new(
+            Guid::default(),
+            PacketData::Init { max_players: 1 },
+        )).await?;
+        loop {
+            match conn.read_packet().await {
+                // disconnect
+                Err(_) => { break; },
+                // client init
+                Ok(Packet { id, data: PacketData::Connect { client_name, .. }, .. }) => {
+                    identifier = format!("{} ({}/{})", conn.addr.to_string(), client_name, id);
+                    tracing::debug!("{} packet received from {}.", "connect", identifier);
+                    tracing::info!("Ignoring player {}", identifier);
+                },
+                // client entered a stage
+                Ok(Packet { data: PacketData::Game { stage, .. }, .. }) => {
+                    tracing::debug!("{} packet received from {}.", "game", identifier);
+                    tracing::info!("Crashing ignored player {} after entering stage {}", identifier, stage);
+                    // wait 500ms
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    // crash player
+                    conn.write_packet(&Packet::new(
+                        Guid::default(),
+                        PacketData::ChangeStage {
+                            id           : "$among$us/SubArea".to_string(),
+                            stage        : "$agogusStage".to_string(),
+                            scenario     : 21,
+                            sub_scenario : 69,
+                        },
+                    )).await?;
+                },
+                // ignore all other packages
+                Ok(Packet { data, .. }) => {
+                    tracing::debug!("{} packet received from {}.", data.get_type_name(), identifier);
+                },
+            };
+        };
+        tracing::info!("Ignored player disconnected {}", identifier);
         Ok(())
     }
 

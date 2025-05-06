@@ -93,6 +93,10 @@ impl LobbyView {
         &mut self.lobby.settings
     }
 
+    pub fn get_mut_client<'a>(&'a mut self, id: &Guid) -> Result<RefMut<'a, Guid, PlayerData, RandomState>> {
+        self.lobby.get_mut_client(id)
+    }
+
     pub fn get_server_recv(&mut self) -> &mut broadcast::Receiver<ServerWideCommand> {
         &mut self.lobby.server_recv
     }

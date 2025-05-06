@@ -1,5 +1,5 @@
-use crate::{guid::Guid, player_holder::PlayerSelect, settings::FlipPovSettings};
-use std::{convert::Infallible, str::FromStr};
+use crate::{guid::Guid, net::GameMode, player_holder::PlayerSelect, settings::FlipPovSettings};
+use std::{convert::Infallible, net::IpAddr, str::FromStr};
 
 use clap::Subcommand;
 
@@ -19,9 +19,10 @@ pub enum ConsoleCommand {
         scenario: i8,
         players: Vec<SinglePlayerSelect>,
     },
-    Ban {
-        players: Vec<SinglePlayerSelect>,
-    },
+    #[clap(subcommand)]
+    Ban(BanCommand),
+    #[clap(subcommand)]
+    Unban(UnbanCommand),
     Crash {
         players: Vec<SinglePlayerSelect>,
     },
@@ -44,6 +45,46 @@ pub enum ConsoleCommand {
     Udp(UdpCommand),
     LoadSettings,
     Restart,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+#[clap(rename_all = "lower")]
+pub enum BanCommand {
+    List,
+    Enable,
+    Disable,
+    Player {
+        players: Vec<SinglePlayerSelect>,
+    },
+    Profile {
+        profile_id: Guid,
+    },
+    IP {
+        ipv4: IpAddr,
+    },
+    Stage {
+        stage: String,
+    },
+    GameMode {
+        game_mode: GameMode,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+#[clap(rename_all = "lower")]
+pub enum UnbanCommand {
+    Profile {
+        profile_id: Guid,
+    },
+    IP {
+        ipv4: IpAddr,
+    },
+    Stage {
+        stage: String,
+    },
+    GameMode {
+        game_mode: GameMode,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -103,6 +144,12 @@ pub enum ShineArg {
     Set {
         #[arg(action = clap::ArgAction::Set)]
         should_sync: bool,
+    },
+    Include {
+        id: i32,
+    },
+    Exclude {
+        id: i32,
     },
 }
 

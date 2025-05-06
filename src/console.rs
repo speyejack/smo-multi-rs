@@ -1,13 +1,14 @@
 use crate::{
     cmds::{
-        console::{FlipCommand, ScenarioCommand, ShineArg, TagCommand, UdpCommand},
+        console::{BanCommand, FlipCommand, ScenarioCommand, ShineArg, TagCommand, UdpCommand, UnbanCommand},
         Command, ConsoleCommand, ExternalCommand, PlayerCommand, ServerWideCommand, ShineCommand,
     },
-    coordinator::unalias_map,
     guid::Guid,
     lobby::LobbyView,
+    net::GameMode,
     player_holder::PlayerSelect,
     settings::{load_settings, save_settings},
+    stages::Stages,
     types::{Result, SMOError},
 };
 use clap::Parser;
@@ -65,7 +66,7 @@ impl Console {
                 let players: PlayerSelect<Guid> = PlayerSelect::AllPlayers;
                 let players = players.into_guid_vec(&self.view)?;
 
-                let actual_stage = unalias_map(&stage);
+                let actual_stage = Stages::input2stage(&stage);
                 let actual_stage = match (actual_stage, force) {
                     (Some(s), _) => s,
                     (None, true) => stage.clone(),
@@ -97,7 +98,7 @@ impl Console {
                 let players: PlayerSelect<String> = (&players[..]).into();
                 let players = players.into_guid_vec(&self.view).await?;
 
-                let actual_stage = unalias_map(&stage);
+                let actual_stage = Stages::input2stage(&stage);
                 let actual_stage = match (actual_stage, force) {
                     (Some(s), _) => s,
                     (None, true) => stage.clone(),
@@ -119,36 +120,210 @@ impl Console {
                 .await?;
                 format!("Sent players to {}:{}", stage, scenario)
             }
-            ConsoleCommand::Ban { players } => {
-                let players: PlayerSelect<String> = (&players[..]).into();
-                let players = players.into_guid_vec(&self.view).await?;
+            ConsoleCommand::Ban(subcmd) => match subcmd {
+                BanCommand::List => {
+                    let settings = self.view.get_lobby().settings.read().await;
+                    let mut list = Vec::new();
+                    list.push("BanList: ".to_string());
+                    list.push(if settings.ban_list.enabled { "enabled" } else { "disabled" }.to_string());
+                    if !settings.ban_list.ip_addresses.is_empty() {
+                        list.push("\nBanned IPv4 addresses:".to_string());
+                        for ip in settings.ban_list.ip_addresses.iter() {
+                            list.push("\n- ".to_string());
+                            list.push(ip.to_string());
+                        }
+                    }
+                    if !settings.ban_list.players.is_empty() {
+                        list.push("\nBanned profile IDs:".to_string());
+                        for guid in settings.ban_list.players.iter() {
+                            list.push("\n- ".to_string());
+                            list.push(guid.to_string());
+                        }
+                    }
+                    if !settings.ban_list.stages.is_empty() {
+                        list.push("\nBanned stages:".to_string());
+                        for stage in settings.ban_list.stages.iter() {
+                            list.push("\n- ".to_string());
+                            list.push(stage.to_string());
+                        }
+                    }
+                    if !settings.ban_list.game_modes.is_empty() {
+                        list.push("\nBanned gamemodes:".to_string());
+                        for game_mode in settings.ban_list.game_modes.iter() {
+                            list.push("\n- ".to_string());
+                            list.push(GameMode::from_i8(*game_mode).to_string());
+                        }
+                    }
+                    list.join("")
+                },
+                BanCommand::Enable => {
+                    // update settings
+                    let mut settings = self.view.get_mut_settings().write().await;
+                    settings.ban_list.enabled = true;
+                    save_settings(&settings)?;
+                    drop(settings);
 
-                self.request_comm(ExternalCommand::Player {
-                    players: players.clone(),
-                    command: PlayerCommand::Disconnect {},
-                })
-                .await?;
-                let banned = players;
-                // TODO Fix banned problems
+                    "BanList enabled.".to_string()
+                },
+                BanCommand::Disable => {
+                    // update settings
+                    let mut settings = self.view.get_mut_settings().write().await;
+                    settings.ban_list.enabled = false;
+                    save_settings(&settings)?;
+                    drop(settings);
 
-                let players = &self.view.get_lobby().players;
-                let ips = players.iter().filter_map(|x| x.value().ipv4).collect();
-                let ids = players.iter().map(|x| *x.key()).collect();
+                    "BanList disabled.".to_string()
+                },
+                BanCommand::Player { players } => {
+                    let players: PlayerSelect<String> = (&players[..]).into();
+                    let players = players.into_guid_vec(&self.view).await?;
 
-                let mut settings = self.view.get_mut_settings().write().await;
-                let updated_ips_ban = settings
-                    .ban_list
-                    .ip_addresses
-                    .union(&ips)
-                    .copied()
-                    .collect();
-                let updated_player_ban = settings.ban_list.players.union(&ids).copied().collect();
+                    // get player data for banned players
+                    let lobby = &self.view.get_lobby();
+                    let guids = players.get_guids(lobby);
+                    let ips   = players.get_ipv4s(lobby);
+                    let names = players.get_names(lobby);
 
-                settings.ban_list.ip_addresses = updated_ips_ban;
-                settings.ban_list.players = updated_player_ban;
+                    // update settings
+                    let mut settings = self.view.get_mut_settings().write().await;
+                    settings.ban_list.ip_addresses = settings
+                        .ban_list
+                        .ip_addresses
+                        .union(&ips)
+                        .copied()
+                        .collect();
+                    settings.ban_list.players = settings
+                        .ban_list
+                        .players
+                        .union(&guids)
+                        .copied()
+                        .collect();
+                    save_settings(&settings)?;
+                    drop(settings);
 
-                "Banned players".to_string()
-            }
+                    // crash connected players
+                    self.request_comm(ExternalCommand::Player {
+                        players : players,
+                        command : PlayerCommand::Crash {},
+                    }).await?;
+
+                    "Banned players: ".to_string() + &Vec::from_iter(names).join(", ")
+                },
+                BanCommand::Profile { profile_id } => {
+                    // get connected players
+                    let lobby = &self.view.get_lobby();
+                    let guids: Vec<Guid> = lobby.players.iter().filter(|x| x.key() == &profile_id).map(|x| *x.key()).collect();
+                    let players: PlayerSelect<Guid> = guids.into();
+                    let players = players.into_guid_vec(&self.view).unwrap();
+
+                    // update settings
+                    let mut settings = self.view.get_mut_settings().write().await;
+                    settings.ban_list.players.insert(profile_id);
+                    save_settings(&settings)?;
+                    drop(settings);
+
+                    // crash connected players
+                    self.request_comm(ExternalCommand::Player {
+                        players : players,
+                        command : PlayerCommand::Crash {},
+                    }).await?;
+
+                    "Banned profile: ".to_string() + &profile_id.to_string()
+                },
+                BanCommand::IP { ipv4 } => {
+                    // get connected players
+                    let lobby = &self.view.get_lobby();
+                    let guids: Vec<Guid> = lobby.players.iter().filter(|x| x.value().ipv4 == Some(ipv4)).map(|x| *x.key()).collect();
+                    let players: PlayerSelect<Guid> = guids.into();
+                    let players = players.into_guid_vec(&self.view).unwrap();
+
+                    // update settings
+                    let mut settings = self.view.get_mut_settings().write().await;
+                    settings.ban_list.ip_addresses.insert(ipv4);
+                    save_settings(&settings)?;
+                    drop(settings);
+
+                    // crash connected players
+                    self.request_comm(ExternalCommand::Player {
+                        players : players,
+                        command : PlayerCommand::Crash {},
+                    }).await?;
+
+                    "Banned ip: ".to_string() + &ipv4.to_string()
+                },
+                BanCommand::Stage { stage } => {
+                    if Stages::input2stage(&stage).is_none() {
+                        "Invalid stage name!".to_string()
+                    } else {
+                        let stages = Stages::stages_by_input(&stage);
+
+                        // update settings
+                        let mut settings = self.view.get_mut_settings().write().await;
+                        for s in stages.iter() {
+                            settings.ban_list.stages.insert(s.to_string());
+                        }
+                        save_settings(&settings)?;
+                        drop(settings);
+
+                        "Banned stages: ".to_string() + &stages.join(", ")
+                    }
+                },
+                BanCommand::GameMode { game_mode } => {
+                    // update settings
+                    let mut settings = self.view.get_mut_settings().write().await;
+                    settings.ban_list.game_modes.insert(GameMode::to_i8(game_mode));
+                    save_settings(&settings)?;
+                    drop(settings);
+
+                    "Banned gamemode: ".to_string() + &game_mode.to_string()
+                },
+            },
+            ConsoleCommand::Unban(subcmd) => match subcmd {
+                UnbanCommand::Profile { profile_id } => {
+                    // update settings
+                    let mut settings = self.view.get_mut_settings().write().await;
+                    settings.ban_list.players.remove(&profile_id);
+                    save_settings(&settings)?;
+                    drop(settings);
+
+                    "Unbanned profile: ".to_string() + &profile_id.to_string()
+                },
+                UnbanCommand::IP { ipv4 } => {
+                    // update settings
+                    let mut settings = self.view.get_mut_settings().write().await;
+                    settings.ban_list.ip_addresses.remove(&ipv4);
+                    save_settings(&settings)?;
+                    drop(settings);
+
+                    "Unbanned ip: ".to_string() + &ipv4.to_string()
+                },
+                UnbanCommand::Stage { stage } => {
+                    if Stages::input2stage(&stage).is_none() {
+                        "Invalid stage name!".to_string()
+                    } else {
+                        let stages = Stages::stages_by_input(&stage);
+
+                        // update settings
+                        let mut settings = self.view.get_mut_settings().write().await;
+                        for s in stages.iter() {
+                            settings.ban_list.stages.remove(s);
+                        }
+                        save_settings(&settings)?;
+                        drop(settings);
+
+                        "Unbanned stages: ".to_string() + &stages.join(", ")
+                    }
+                },
+                UnbanCommand::GameMode { game_mode } => {
+                    // update settings
+                    let mut settings = self.view.get_mut_settings().write().await;
+                    settings.ban_list.game_modes.remove(&GameMode::to_i8(game_mode));
+                    save_settings(&settings)?;
+                    drop(settings);
+
+                    "Unbanned gamemode: ".to_string() + &game_mode.to_string()
+                },
+            },
             ConsoleCommand::Crash { players } => {
                 let players: PlayerSelect<String> = (&players[..]).into();
                 let players = players.into_guid_vec(&self.view).await?;
@@ -175,7 +350,7 @@ impl Console {
                     Some(to_enabled) => {
                         let mut settings = self.view.get_mut_settings().write().await;
                         settings.scenario.merge_enabled = to_enabled;
-                        save_settings(&settings);
+                        save_settings(&settings)?;
                         drop(settings);
                         if to_enabled {
                             "Enabled scenario merge"
@@ -332,13 +507,26 @@ impl Console {
             },
             ConsoleCommand::Shine(shine) => match shine {
                 ShineArg::List => {
+                    let mut out = "Shines: ".to_string();
+
                     let shines = self.view.get_lobby().shines.read().await;
-                    let str_shines = shines
+                    out += &shines
                         .iter()
                         .map(ToString::to_string)
                         .collect::<Vec<_>>()
                         .join(", ");
-                    str_shines
+
+                    let settings = self.view.get_lobby().settings.read().await;
+                    if settings.shines.excluded.len() > 0 {
+                        out += "\nExcluded Shines: ";
+                        out += &settings.shines.excluded
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                    }
+
+                    out
                 }
                 ShineArg::Clear => {
                     self.request_comm(ExternalCommand::Shine {
@@ -373,6 +561,22 @@ impl Console {
                         "Disabled shine sync"
                     }
                     .to_string()
+                }
+                ShineArg::Include { id } => {
+                    let mut settings = self.view.get_mut_settings().write().await;
+                    settings.shines.excluded.remove(&id);
+                    save_settings(&settings)?;
+                    drop(settings);
+
+                    format!("No longer exclude shine {} from syncing", id)
+                }
+                ShineArg::Exclude { id } => {
+                    let mut settings = self.view.get_mut_settings().write().await;
+                    settings.shines.excluded.insert(id);
+                    save_settings(&settings)?;
+                    drop(settings);
+
+                    format!("Exclude shine {} from syncing", id)
                 }
             },
             ConsoleCommand::Udp(udpcmd) => match udpcmd {

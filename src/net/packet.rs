@@ -3,6 +3,7 @@ use std::{fmt::Debug, io::Cursor};
 use super::encoding::{Decodable, Encodable};
 use crate::{
     guid::Guid,
+    net::GameMode,
     types::{Costume, EncodingError, Quaternion, Vector3},
 };
 use bytes::{Buf, BufMut};
@@ -52,7 +53,14 @@ impl Packet {
             return Err(EncodingError::NotEnoughData);
         }
 
-        buf.advance(id_size + type_size);
+        buf.advance(id_size);
+        let ptype: u16 = buf.get_u16_le().into();
+
+        // JsonApi
+        if ptype == 0x5453 {
+           return Ok(0);
+        }
+
         let size = buf.get_u16_le().into();
         if buf.remaining() < size {
             return Err(EncodingError::NotEnoughData);
@@ -90,10 +98,16 @@ pub enum PacketData {
         stage: String,
     },
     Tag {
+        game_mode: GameMode,
         update_type: TagUpdate,
         is_it: bool,
         seconds: u8,
         minutes: u16,
+    },
+    GameMode {
+        game_mode: GameMode,
+        update_type: u8,
+        data: Vec<u8>,
     },
     Connect {
         c_type: ConnectionType,
@@ -120,6 +134,9 @@ pub enum PacketData {
         port: u16,
     },
     HolePunch,
+    JsonApi {
+        json: String,
+    },
 }
 
 impl PacketData {
@@ -131,6 +148,7 @@ impl PacketData {
             Self::Cap { .. } => 29 + CAP_ANIM_SIZE,
             Self::Game { .. } => 2 + STAGE_GAME_NAME_SIZE,
             Self::Tag { .. } => 5,
+            Self::GameMode { data, .. } => 1 + data.len(),
             Self::Connect { .. } => 6 + CLIENT_NAME_SIZE,
             Self::Disconnect { .. } => 0,
             Self::Costume { .. } => COSTUME_NAME_SIZE * 2,
@@ -140,6 +158,7 @@ impl PacketData {
             Self::Command { .. } => 0,
             Self::UdpInit { .. } => 2,
             Self::HolePunch { .. } => 0,
+            Self::JsonApi { json } => json.len(),
         }
     }
 
@@ -151,6 +170,7 @@ impl PacketData {
             Self::Cap { .. } => 3,
             Self::Game { .. } => 4,
             Self::Tag { .. } => 5,
+            Self::GameMode { .. } => 5,
             Self::Connect { .. } => 6,
             Self::Disconnect { .. } => 7,
             Self::Costume { .. } => 8,
@@ -160,6 +180,7 @@ impl PacketData {
             Self::Command { .. } => 12,
             Self::UdpInit { .. } => 13,
             Self::HolePunch { .. } => 14,
+            Self::JsonApi { .. } => 0x5453,
         }
     }
 
@@ -171,6 +192,7 @@ impl PacketData {
             Self::Cap { .. } => "cap",
             Self::Game { .. } => "game",
             Self::Tag { .. } => "tag",
+            Self::GameMode { .. } => "gamemode",
             Self::Connect { .. } => "connect",
             Self::Disconnect { .. } => "disconnect",
             Self::Costume { .. } => "costume",
@@ -180,6 +202,7 @@ impl PacketData {
             Self::Command { .. } => "command",
             Self::UdpInit { .. } => "udpInit",
             Self::HolePunch { .. } => "holePunch",
+            Self::JsonApi { .. } => "jsonApi",
         }
         .to_string()
     }
@@ -195,8 +218,10 @@ pub enum ConnectionType {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TagUpdate {
-    Time = 1,
-    State = 2,
+    Unknown = 0,
+    Time    = 1,
+    State   = 2,
+    Both    = 3,
 }
 
 impl TagUpdate {}
@@ -206,16 +231,17 @@ where
     R: Buf,
 {
     fn decode(buf: &mut R) -> std::result::Result<Self, EncodingError> {
-        if buf.remaining() < (16 + 2 + 2) {
+        let total_size = buf.remaining();
+        if total_size < (16 + 2 + 2) {
             return Err(EncodingError::NotEnoughData);
         }
 
         let mut id = [0; 16];
         buf.copy_to_slice(&mut id);
         let p_type = buf.get_u16_le();
-        let p_size = buf.get_u16_le();
+        let mut p_size = buf.get_u16_le();
 
-        if buf.remaining() < p_size.into() {
+        if p_type != 0x5453 && buf.remaining() < p_size.into() {
             return Err(EncodingError::NotEnoughData);
         }
 
@@ -249,15 +275,29 @@ where
                 scenario_num: buf.get_i8(),
                 stage: buf_size_to_string(buf, STAGE_GAME_NAME_SIZE)?,
             },
-            5 => PacketData::Tag {
-                update_type: if buf.get_u8() == 1 {
-                    TagUpdate::Time
-                } else {
-                    TagUpdate::State
-                },
-                is_it: buf.get_u8() != 0,
-                seconds: buf.get_u8(),
-                minutes: buf.get_u16_le(),
+            5 => {
+                let both = buf.get_u8();
+                let game_mode = GameMode::from_u8((both & 0b11110000) >> 4);
+                let update_type = (both & 0b1111) as u8;
+                match (game_mode, update_type) {
+                    (GameMode::HideAndSeek, _) | (GameMode::Sardines, _) | (GameMode::Legacy, 3) => PacketData::Tag {
+                        game_mode,
+                        update_type: match update_type {
+                            1 => TagUpdate::Time,
+                            2 => TagUpdate::State,
+                            3 => TagUpdate::Both,
+                            _ => TagUpdate::Unknown,
+                        },
+                        is_it: buf.get_u8() != 0,
+                        seconds: buf.get_u8(),
+                        minutes: buf.get_u16_le(),
+                    },
+                    _ => PacketData::GameMode {
+                        game_mode,
+                        update_type,
+                        data: buf.copy_to_bytes((p_size - 1).into())[..].to_vec(),
+                    },
+                }
             },
             6 => {
                 let c_type = if buf.get_u32_le() == 0 {
@@ -296,6 +336,18 @@ where
                 port: buf.get_u16_le(),
             },
             14 => PacketData::HolePunch {},
+            0x5453 => {
+                let t_size = p_size;
+                p_size = total_size as u16;
+                PacketData::JsonApi {
+                    json: [
+                        std::str::from_utf8(&id)?.to_string(),
+                        std::str::from_utf8(&[ (p_type & 0xff) as u8, ((p_type >> 8) & 0xff) as u8 ])?.to_string(),
+                        std::str::from_utf8(&[ (t_size & 0xff) as u8, ((t_size >> 8) & 0xff) as u8 ])?.to_string(),
+                        std::str::from_utf8(&buf.copy_to_bytes(buf.remaining().into()))?.to_string(),
+                    ].join(""),
+                }
+            },
             _ => PacketData::Unhandled {
                 tag: p_type,
                 data: buf.copy_to_bytes(p_size.into())[..].to_vec(),
@@ -366,19 +418,30 @@ where
                 buf.put_slice(&str_to_sized_array::<STAGE_GAME_NAME_SIZE>(stage));
             }
             PacketData::Tag {
+                game_mode,
                 update_type,
                 is_it,
                 seconds,
                 minutes,
             } => {
                 let tag = match update_type {
-                    TagUpdate::Time => 1,
-                    TagUpdate::State => 2,
+                    TagUpdate::Unknown => 0,
+                    TagUpdate::Time    => 1,
+                    TagUpdate::State   => 2,
+                    TagUpdate::Both    => 3,
                 };
-                buf.put_u8(tag);
+                buf.put_u8((GameMode::to_u8(*game_mode) << 4) | tag);
                 buf.put_u8((*is_it).into());
                 buf.put_u8(*seconds);
                 buf.put_u16_le(*minutes);
+            }
+            PacketData::GameMode {
+                game_mode,
+                update_type,
+                data,
+            } => {
+                buf.put_u8((GameMode::to_u8(*game_mode) << 4) | update_type);
+                buf.put_slice(&data[..])
             }
             PacketData::Connect {
                 c_type,
@@ -424,6 +487,7 @@ where
                 buf.put_u16_le(*port);
             }
             PacketData::HolePunch => {}
+            PacketData::JsonApi { json: _ } => {}
         }
 
         Ok(())
@@ -472,6 +536,7 @@ mod test {
                 12 => 0,
                 13 => 2,
                 14 => 0,
+                0x5453 => 0,
                 _ => 0,
             };
 

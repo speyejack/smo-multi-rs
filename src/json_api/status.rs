@@ -1,7 +1,6 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::coordinator::Coordinator;
 use crate::json_api::{JsonApiStatusPlayer, JsonApiStatusSettings};
 use crate::lobby::LobbyView;
 

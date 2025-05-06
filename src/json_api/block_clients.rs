@@ -3,8 +3,6 @@ use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use tokio::sync::RwLock;
 
-use crate::net::connection::Connection;
-
 lazy_static! {
     static ref FAILURES: RwLock<HashMap<IpAddr, u8>> = RwLock::new(HashMap::new());
 }

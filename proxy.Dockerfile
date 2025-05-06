@@ -1,4 +1,4 @@
-FROM rust:1.63 AS base
+FROM rust:1.74 AS base
 
 RUN cargo install cargo-chef
 
@@ -22,7 +22,7 @@ RUN cargo build --package proxy --release
 
 ########################################################################
 
-FROM debian:buster-slim AS runtime
+FROM debian:bookworm-slim AS runtime
 
 COPY --from=builder ./target/release/proxy ./target/release/proxy
 

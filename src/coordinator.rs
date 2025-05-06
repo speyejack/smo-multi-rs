@@ -4,22 +4,22 @@ use crate::{
         ShineCommand,
     },
     guid::Guid,
-    lobby::Lobby,
-    net::{ConnectionType, Packet, PacketData, TagUpdate},
+    lobby::{Lobby, LobbyView},
+    net::{ConnectionType, GameMode, Packet, PacketData, TagUpdate},
     player_holder::ClientChannel,
     types::Result,
 };
 
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::BTreeSet, sync::Arc, time::Duration};
 use tokio::{
     fs::File,
     io::AsyncWriteExt,
-    sync::{broadcast, mpsc, RwLock},
+    sync::{broadcast, mpsc, oneshot, RwLock},
 };
 use tracing::{info_span, Instrument};
 
 pub type SyncShineBag = Arc<RwLock<ShineBag>>;
-pub type ShineBag = HashSet<i32>;
+pub type ShineBag = BTreeSet<i32>;
 
 pub struct Coordinator {
     lobby: Lobby,
@@ -70,9 +70,17 @@ impl Coordinator {
                         self.sync_all_shines().await?;
                     }
                     PacketData::Shine { shine_id, .. } => {
-                        self.lobby.shines.write().await.insert(*shine_id);
-                        tracing::info!("Got moon {shine_id}");
-                        self.sync_all_shines().await?;
+                        let settings = self.lobby.settings.read().await;
+                        let is_excluded = settings.shines.excluded.contains(shine_id);
+                        drop(settings);
+
+                        if is_excluded {
+                            tracing::info!("Got moon {shine_id} (excluded)");
+                        } else {
+                            self.lobby.shines.write().await.insert(*shine_id);
+                            tracing::info!("Got moon {shine_id}");
+                            self.sync_all_shines().await?;
+                        }
 
                         return Ok(true);
                     }
@@ -83,55 +91,84 @@ impl Coordinator {
                     } => {
                         tracing::debug!("Got game packet {}->{}", stage, scenario_num);
 
-                        if stage == "CapWorldHomeStage" && *scenario_num == 0 {
-                            let mut data = self.lobby.get_mut_client(&packet.id)?;
-                            tracing::debug!("Player '{}' started new save", data.name);
-                            data.value_mut().speedrun_start = true;
-                            data.value_mut().shine_sync.clear();
-                            drop(data);
-                            let mut settings = self.lobby.shines.write().await;
-                            settings.clear();
-                            drop(settings);
-                            self.persist_shines().await;
-                        } else if stage == "WaterfallWordHomeStage" {
-                            let mut data = self.lobby.get_mut_client(&packet.id)?;
-                            tracing::debug!("Enabling shine sync for player '{}'", data.name);
-                            let was_speed_run = data.speedrun_start;
-                            data.speedrun_start = false;
-                            drop(data);
+                        // entering a banned stage?
+                        let settings = self.lobby.settings.read().await;
+                        let is_stage_banned = settings.ban_list.enabled && settings.ban_list.stages.contains(stage);
+                        drop(settings);
+                        if is_stage_banned {
+                            tracing::warn!("Crashing player for entering banned stage {}.", stage);
+                            // crash player in 500ms
+                            tokio::spawn({
+                                let to_coord = self.lobby.to_coord.clone();
+                                async move {
+                                    tokio::time::sleep(Duration::from_millis(500)).await;
+                                    let (sender, recv) = oneshot::channel();
+                                    let _ = to_coord.send(
+                                        Command::External(
+                                            ExternalCommand::Player {
+                                                players : Players::Individual(vec![packet.id]),
+                                                command : PlayerCommand::Crash {},
+                                            },
+                                            sender
+                                        )
+                                    ).await;
+                                    recv.await
+                                }
+                            });
+                            return Ok(true);
+                        }
 
-                            let settings = self.lobby.settings.read().await;
-                            let should_sync_shines = settings.shines.enabled;
-                            drop(settings);
+                        // player is on a new save file before entering Cascade kingdom
+                        let is_shine_sync_disabled = self.lobby.get_client(&packet.id)?.disable_shine_sync;
+                        if (stage == "CapWorldHomeStage" || stage == "CapWorldTowerStage") && *scenario_num == 1 {
+                            if !is_shine_sync_disabled {
+                                // disable shine sync and clear collected shines for this player
+                                let mut player = self.lobby.get_mut_client(&packet.id)?;
+                                tracing::info!("Player '{}' entered Cap on new save, preventing moon sync until Cascade", player.name);
+                                player.value_mut().disable_shine_sync = true;
+                                player.value_mut().shine_sync.clear();
+                                drop(player);
 
-                            if should_sync_shines && was_speed_run {
-                                let shine_bag = self.lobby.shines.clone();
-                                let client_shines = self
-                                    .lobby
-                                    .get_client(&packet.id)?
-                                    .value()
-                                    .shine_sync
-                                    .clone();
+                                // clear collected shines remembered by the server
+                                let clear_on_new_saves = self.lobby.settings.read().await.shines.clear_on_new_saves;
+                                if clear_on_new_saves {
+                                    self.lobby.shines.write().await.clear();
+                                    self.persist_shines().await;
+                                    tracing::info!("Cleared server memory of collected moons");
+                                }
+                            }
+                        } else if is_shine_sync_disabled {
+                            tracing::info!("Player {} entered Cascade or later with moon sync disabled, enabling moon sync again", self.lobby.get_client(&packet.id)?.name);
+                            let mut lobby = LobbyView::new(&self.lobby);
+                            tokio::spawn(async move {
+                                // sleep to prevent sending it too early (just a safety measure that is likely not necessary)
+                                tokio::time::sleep(Duration::from_millis(2000)).await;
+                                // enable shine sync again for this player
+                                lobby.get_mut_client(&packet.id)?.value_mut().disable_shine_sync = false;
+                                // sync shines to player
+                                let shine_sync_enabled = lobby.get_lobby().settings.read().await.shines.enabled;
+                                if shine_sync_enabled {
+                                    let server_shines = lobby.get_lobby().shines.clone();
 
-                                let data = self.lobby.get_client(&packet.id)?;
-                                let channel = data.channel.clone();
-                                drop(data);
-
-                                tokio::spawn(async move {
-                                    tokio::time::sleep(Duration::from_secs(15)).await;
+                                    let player = lobby.get_lobby().get_client(&packet.id)?;
+                                    let player_channel = player.channel.clone();
+                                    let excluded_shines = &lobby.get_lobby().settings.read().await.shines.excluded;
+                                    let player_shines = player.shine_sync.union(&excluded_shines).copied().collect();
+                                    drop(player);
 
                                     let result = client_sync_shines(
-                                        channel,
-                                        shine_bag,
+                                        player_channel,
+                                        server_shines,
                                         &packet.id,
-                                        &client_shines,
+                                        &player_shines,
                                     )
                                     .await;
                                     if let Err(e) = result {
                                         tracing::warn!("Initial shine sync failed: {e}")
                                     }
-                                });
-                            }
+                                }
+                                Ok(()) as Result<()>
+                            });
                         }
                         tracing::debug!("Changing scenarios: {} {}", scenario_num, stage);
 
@@ -139,6 +176,34 @@ impl Coordinator {
                             self.lobby.settings.read().await.scenario.merge_enabled;
                         if merge_scenario {
                             self.merge_scenario(&packet).await?;
+                        }
+                    }
+                    PacketData::Tag { game_mode, .. } | PacketData::GameMode { game_mode, .. } => {
+                        // entering a banned gamemode?
+                        let settings = self.lobby.settings.read().await;
+                        let is_gamemode_banned = settings.ban_list.enabled && settings.ban_list.game_modes.contains(&GameMode::to_i8(*game_mode));
+                        drop(settings);
+                        if is_gamemode_banned {
+                            tracing::warn!("Crashing player for entering banned game mode {}.", game_mode);
+                            // crash player in 500ms
+                            tokio::spawn({
+                                let to_coord = self.lobby.to_coord.clone();
+                                async move {
+                                    tokio::time::sleep(Duration::from_millis(500)).await;
+                                    let (sender, recv) = oneshot::channel();
+                                    let _ = to_coord.send(
+                                        Command::External(
+                                            ExternalCommand::Player {
+                                                players : Players::Individual(vec![packet.id]),
+                                                command : PlayerCommand::Crash {},
+                                            },
+                                            sender
+                                        )
+                                    ).await;
+                                    recv.await
+                                }
+                            });
+                            return Ok(true);
                         }
                     }
                     _ => {}
@@ -182,10 +247,10 @@ impl Coordinator {
                 }
                 PlayerCommand::Crash {} => {
                     let data = PacketData::ChangeStage {
-                        id: "$among$us/SubArea".to_string(),
-                        stage: "$agogusStage".to_string(),
-                        scenario: 21,
-                        sub_scenario: 69, // invalid id
+                        id           : "$among$us/cr4sh%".to_string(),
+                        stage        : "$agogusStage".to_string(),
+                        scenario     : 21,
+                        sub_scenario : 69, // invalid id
                     };
                     let packet = Packet::new(Guid::default(), data);
                     let cmd = ClientCommand::SelfAddressed(packet);
@@ -196,27 +261,26 @@ impl Coordinator {
                     if let Some((minutes, seconds)) = time {
                         // TODO test if is_it is the correct default
                         let tag_packet = PacketData::Tag {
+                            game_mode: GameMode::Legacy,
                             update_type: TagUpdate::Time,
                             is_it: false,
                             minutes,
                             seconds,
                         };
                         let packet = Packet::new(Guid::default(), tag_packet);
-
-                        self.send_players(&players, &ClientCommand::SelfAddressed(packet))
-                            .await?;
+                        self.send_players(&players, &ClientCommand::SelfAddressed(packet)).await?;
                     }
 
                     if let Some(is_seeking) = is_seeking {
                         let tag_packet = PacketData::Tag {
+                            game_mode: GameMode::Legacy,
                             update_type: TagUpdate::State,
                             is_it: is_seeking,
                             minutes: 0,
                             seconds: 0,
                         };
                         let packet = Packet::new(Guid::default(), tag_packet);
-                        self.send_players(&players, &ClientCommand::SelfAddressed(packet))
-                            .await;
+                        self.send_players(&players, &ClientCommand::SelfAddressed(packet)).await?;
                     }
                     "Updated tag status".to_string()
                 }
@@ -296,12 +360,11 @@ impl Coordinator {
             _ => unreachable!(),
         };
 
-        let (_connection_type, client_name) = match &packet.data {
+        let client_name = match &packet.data {
             PacketData::Connect {
-                c_type,
                 client_name,
                 ..
-            } => (c_type, client_name),
+            } => client_name,
             _ => unreachable!(),
         };
         let id = cli.guid;
@@ -330,13 +393,14 @@ impl Coordinator {
             packet.id,
             self.lobby.players.len() - 1,
         );
+
         let settings = self.lobby.settings.read().await;
         let max_player = settings.server.max_players;
-
         drop(settings);
-        // Sync connection, costumes, and last game packet
+
+        // Sync other players to the new player
         for other_ref in self.lobby.players.iter() {
-            let other_id = other_ref.key();
+            let other_id  = other_ref.key();
             let other_cli = other_ref.value();
 
             let connect_packet = Packet::new(
@@ -348,31 +412,63 @@ impl Coordinator {
                 },
             );
 
-            let costume_packet = match &other_cli.costume {
-                Some(costume) => Some(Packet::new(*other_id, PacketData::Costume(costume.clone()))),
-                _ => None,
-            };
+            let packets = [
+                Some(connect_packet),
+                other_cli.last_costume_packet.clone(),
+                other_cli.last_capture_packet.clone(),
+                other_cli.create_tag_packet(*other_id),
+                other_cli.last_game_packet.clone(),
+                other_cli.last_player_packet.clone(),
+            ];
 
-            let last_game_packet = other_cli.last_game_packet.clone();
-
-            drop(other_cli);
-
-            comm.send(ClientCommand::Packet(connect_packet)).await?;
-
-            if let Some(p) = costume_packet {
-                comm.send(ClientCommand::Packet(p)).await?;
-            }
-
-            if let Some(p) = last_game_packet {
-                comm.send(ClientCommand::Packet(p)).await?;
+            for packet in packets {
+                if let Some(p) = packet {
+                    comm.send(ClientCommand::Packet(p)).await?;
+                }
             }
         }
 
-        self.broadcast(&ClientCommand::Packet(packet))
+        let client_id = packet.id;
+        let conn_type = match packet.data {
+            PacketData::Connect {
+                c_type,
+                ..
+            } => c_type,
+            _ => unreachable!(),
+        };
+
+        // Sync new player to other players
+        self.broadcast(&ClientCommand::Packet(packet))?;
+
+        // make the other clients reset their puppet cache for this client, if it is a new connection (after restart)
+        if conn_type == ConnectionType::FirstConnection {
+            // empty tag packet
+            self.broadcast(&ClientCommand::Packet(Packet::new(
+                client_id,
+                PacketData::Tag {
+                    game_mode   : GameMode::Legacy,
+                    update_type : TagUpdate::Both,
+                    is_it       : false,
+                    seconds     : 0,
+                    minutes     : 0,
+                },
+            )))?;
+            // empty capture packet
+            self.broadcast(&ClientCommand::Packet(Packet::new(
+                client_id,
+                PacketData::Capture {
+                    model: "".to_string(),
+                },
+            )))?;
+        }
+
+        Ok(())
     }
 
     async fn disconnect_player(&mut self, guid: Guid) -> Result<()> {
         tracing::info!("Disconnecting player {}", guid);
+        // TODO: do not remove the player, but mark it as disconnected, so that
+        // after a reconnect its packets are still there to send to new players.
         if let Some((guid, data)) = self.lobby.players.remove(&guid) {
             // let name = &data.read().await.name;
             self.lobby.names.0.write().await.remove_by_left(&guid);
@@ -391,19 +487,23 @@ impl Coordinator {
             return Ok(());
         }
 
+        let excluded_shines = &settings.shines.excluded;
+
         for player_ref in self.lobby.players.iter() {
-            let data = player_ref.value();
-            let shines = &data.shine_sync;
+            let player = player_ref.value();
+            let player_shines = player.shine_sync.union(&excluded_shines).copied().collect();
+            let server_shines = self.lobby.shines.clone();
             let sender_guid = Guid::default();
-            if data.speedrun_start {
+
+            if player.disable_shine_sync {
                 continue;
             }
 
             client_sync_shines(
-                data.channel.clone(),
-                self.lobby.shines.clone(),
+                player.channel.clone(),
+                server_shines,
                 &sender_guid,
-                &shines,
+                &player_shines,
             )
             .await?;
         }
@@ -445,31 +545,6 @@ async fn client_sync_shines(
             .await?;
     }
     Ok(())
-}
-
-pub fn unalias_map(alias: &str) -> Option<String> {
-    let unalias = match alias {
-        "cap" => "CapWorldHomeStage",
-        "cascade" => "WaterfallWorldHomeStage",
-        "sand" => "SandWorldHomeStage",
-        "lake" => "LakeWorldHomeStage",
-        "wooded" => "ForestWorldHomeStage",
-        "cloud" => "CloudWorldHomeStage",
-        "lost" => "ClashWorldHomeStage",
-        "metro" => "CityWorldHomeStage",
-        "sea" => "SeaWorldHomeStage",
-        "snow" => "SnowWorldHomeStage",
-        "lunch" => "LavaWorldHomeStage",
-        "ruined" => "BossRaidWorldHomeStage",
-        "bowser" => "SkyWorldHomeStage",
-        "moon" => "MoonWorldHomeStage",
-        "mush" => "PeachWorldHomeStage",
-        "dark" => "Special1WorldHomeStage",
-        "darker" => "Special2WorldHomeStage",
-        _ => return None,
-    };
-
-    Some(unalias.to_string())
 }
 
 async fn save_shines(filename: String, shines: SyncShineBag) -> Result<()> {

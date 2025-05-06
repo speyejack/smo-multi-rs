@@ -1,4 +1,4 @@
-FROM rust:1.63 AS base
+FROM rust:1.74 AS base
 
 RUN cargo install cargo-chef
 
@@ -22,8 +22,11 @@ RUN cargo build --release --bin smo-rs
 
 ########################################################################
 
-FROM debian:buster-slim AS runtime
+FROM debian:bookworm-slim AS runtime
 
 COPY --from=builder ./target/release/smo-rs ./target/release/smo-rs
 
 ENTRYPOINT ["/target/release/smo-rs"]
+EXPOSE     1027/tcp
+WORKDIR    /data/
+VOLUME     /data/

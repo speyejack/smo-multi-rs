@@ -12,8 +12,8 @@ lazy_static! {
         ("cloud", "CloudWorldHomeStage"),
         ("lost", "ClashWorldHomeStage"),
         ("metro", "CityWorldHomeStage"),
-        ("sea", "SeaWorldHomeStage"),
         ("snow", "SnowWorldHomeStage"),
+        ("sea", "SeaWorldHomeStage"),
         ("lunch", "LavaWorldHomeStage"),
         ("ruined", "BossRaidWorldHomeStage"),
         ("bowser", "SkyWorldHomeStage"),
@@ -32,8 +32,8 @@ lazy_static! {
         ("cloud", "Cloud Kingdom"),
         ("lost", "Lost Kingdom"),
         ("metro", "Metro Kingdom"),
-        ("sea", "Snow Kingdom"),
-        ("snow", "Seaside Kingdom"),
+        ("snow", "Snow Kingdom"),
+        ("sea", "Seaside Kingdom"),
         ("lunch", "Luncheon Kingdom"),
         ("ruined", "Ruined Kingdom"),
         ("bowser", "Bowser's Kingdom"),
@@ -228,14 +228,14 @@ pub struct Stages {}
 impl Stages {
     pub fn input2stage(input: &str) -> Option<String> {
         // alias value
-        if ALIAS2STAGE.contains_key(&input) {
+        if Self::is_alias(input) {
             return match ALIAS2STAGE.get(&input) {
                 Some(stage) => Some(stage.to_string()),
                 None => None,
             };
         }
         // exact stage value
-        if STAGE2ALIAS.contains_key(&input) {
+        if Self::is_stage(input) {
             return Some(input.to_string());
         }
         // force input value with a !
@@ -252,6 +252,25 @@ impl Stages {
                 None => None,
             },
             None => None,
+        }
+    }
+
+    pub fn is_alias(input: &str) -> bool {
+        return ALIAS2STAGE.contains_key(&input);
+    }
+
+    pub fn is_stage(input: &str) -> bool {
+        return STAGE2ALIAS.contains_key(&input);
+    }
+
+    pub fn stages_by_input(input: &str) -> Vec<String> {
+        if Self::is_alias(input) {
+            return STAGE2ALIAS.iter().filter(|(_k,v)| **v == input).map(|(k,_v)| k.to_string()).collect::<Vec<_>>();
+        }
+
+        return match Self::input2stage(input) {
+            Some(stage) => [stage].to_vec(),
+            _ => [].to_vec(),
         }
     }
 }
